@@ -169,12 +169,8 @@ export function SelectConfigureSection({
 
   const loadModelPreview = async () => {
     setPreviewError(null);
-    // Try Supabase URL first, then fallback to API
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const url = supabaseUrl
-      ? `${supabaseUrl}/storage/v1/object/public/IMAGES/${venueId}/preview.png`
-      : `/api/images/${venueId}/preview`;
-
+    // Always use the API route - it handles both Supabase and local fallback
+    const url = `/api/images/${venueId}/preview`;
     console.log('[Preview] Loading from:', url);
     setModelPreviewUrl(url);
   };
