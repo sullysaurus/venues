@@ -137,6 +137,13 @@ class StorageDB:
         return client.storage.from_(BUCKET_NAME).get_public_url(file_path)
 
     @staticmethod
+    def get_blend_url(venue_id: str) -> Optional[str]:
+        """Get the public URL for a venue's Blender model file."""
+        client = get_supabase_client()
+        file_path = f"{venue_id}/venue_model.blend"
+        return client.storage.from_(BUCKET_NAME).get_public_url(file_path)
+
+    @staticmethod
     def upload_seatmap(venue_id: str, event_type: str, image_data: bytes) -> str:
         """Upload a seatmap image."""
         client = get_supabase_client()

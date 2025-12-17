@@ -64,6 +64,30 @@ async def get_model_preview(venue_id: str):
     raise HTTPException(status_code=404, detail="Preview not found")
 
 
+@router.get("/{venue_id}/model")
+async def get_venue_model(venue_id: str):
+    """Get the 3D model (.blend file) for a venue from Supabase Storage."""
+    from api.db import StorageDB
+
+    # Try Supabase first
+    blend_url = StorageDB.get_blend_url(venue_id)
+    if blend_url:
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url=blend_url)
+
+    # Fallback to local file
+    venue_dir = VENUES_DIR / venue_id
+    blend_path = venue_dir / "venue_model.blend"
+    if blend_path.exists():
+        return FileResponse(
+            blend_path,
+            media_type="application/octet-stream",
+            filename=f"{venue_id}_model.blend",
+        )
+
+    raise HTTPException(status_code=404, detail="Model not found")
+
+
 @router.get("/{venue_id}/seatmap/{event_type}")
 async def get_seatmap(venue_id: str, event_type: str = "default"):
     """Get the seatmap image for a venue."""
