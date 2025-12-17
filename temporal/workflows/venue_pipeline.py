@@ -153,9 +153,9 @@ class VenuePipelineWorkflow:
             model_result = await workflow.execute_activity(
                 build_venue_model_activity,
                 args=[input.config, sections],
-                start_to_close_timeout=timedelta(minutes=10),
+                start_to_close_timeout=timedelta(minutes=15),
                 retry_policy=BLENDER_RETRY,
-                heartbeat_timeout=timedelta(minutes=2),
+                # No heartbeat_timeout - Modal calls are blocking and can't heartbeat during execution
             )
 
             # Extract blend file for depth rendering
@@ -220,9 +220,9 @@ class VenuePipelineWorkflow:
                 batch_depths = await workflow.execute_activity(
                     render_depth_maps_activity,
                     args=[blend_file_b64, batch, batch_idx],
-                    start_to_close_timeout=timedelta(minutes=15),
+                    start_to_close_timeout=timedelta(minutes=20),
                     retry_policy=BLENDER_RETRY,
-                    heartbeat_timeout=timedelta(minutes=5),
+                    # No heartbeat_timeout - Modal calls are blocking
                 )
 
                 all_depth_maps.update(batch_depths)
@@ -363,9 +363,9 @@ class VenuePipelineWorkflow:
                         input.reference_image_b64,
                         input.ip_adapter_scale,
                     ],
-                    start_to_close_timeout=timedelta(minutes=5),
+                    start_to_close_timeout=timedelta(minutes=10),
                     retry_policy=AI_GENERATION_RETRY,
-                    heartbeat_timeout=timedelta(minutes=2),
+                    # No heartbeat_timeout - Modal calls are blocking
                 )
                 tasks.append((seat_id, task))
 
