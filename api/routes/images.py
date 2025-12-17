@@ -88,6 +88,30 @@ async def get_venue_model(venue_id: str):
     raise HTTPException(status_code=404, detail="Model not found")
 
 
+@router.get("/{venue_id}/files")
+async def list_venue_files(venue_id: str):
+    """Debug endpoint: List all files in Supabase Storage for a venue."""
+    from api.db.client import get_supabase_client
+
+    try:
+        client = get_supabase_client()
+        files = client.storage.from_("IMAGES").list(venue_id)
+        return {
+            "venue_id": venue_id,
+            "files": [
+                {
+                    "name": f["name"],
+                    "size": f.get("metadata", {}).get("size"),
+                    "updated_at": f.get("updated_at"),
+                }
+                for f in files
+            ],
+            "count": len(files),
+        }
+    except Exception as e:
+        return {"venue_id": venue_id, "error": str(e), "files": []}
+
+
 @router.get("/{venue_id}/seatmap/{event_type}")
 async def get_seatmap(venue_id: str, event_type: str = "default"):
     """Get the seatmap image for a venue."""
