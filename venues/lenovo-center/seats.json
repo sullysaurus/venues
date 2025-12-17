@@ -1,0 +1,38 @@
+{
+  "venue": "lenovo-center",
+  "seats": [
+    {
+      "id": "101_Front_1",
+      "look_angle": -180.0,
+      "row": "Front",
+      "seat": 1,
+      "section": "101",
+      "tier": "lower",
+      "x": 0.0,
+      "y": 18.0,
+      "z": 2.0
+    },
+    {
+      "id": "101_Middle_1",
+      "look_angle": -180.0,
+      "row": "Middle",
+      "seat": 1,
+      "section": "101",
+      "tier": "lower",
+      "x": 0.0,
+      "y": 26.5,
+      "z": 6.0
+    },
+    {
+      "id": "101_Back_1",
+      "look_angle": -180.0,
+      "row": "Back",
+      "seat": 1,
+      "section": "101",
+      "tier": "lower",
+      "x": 0.0,
+      "y": 34.15,
+      "z": 9.6
+    }
+  ]
+}

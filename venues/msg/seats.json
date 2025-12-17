@@ -1,0 +1,38 @@
+{
+  "venue": "msg",
+  "seats": [
+    {
+      "id": "208_Front_1",
+      "look_angle": -165.0,
+      "row": "Front",
+      "seat": 1,
+      "section": "208",
+      "tier": "upper",
+      "x": 10.87,
+      "y": 40.569,
+      "z": 16.0
+    },
+    {
+      "id": "208_Middle_1",
+      "look_angle": -165.0,
+      "row": "Middle",
+      "seat": 1,
+      "section": "208",
+      "tier": "upper",
+      "x": 12.41,
+      "y": 46.316,
+      "z": 19.5
+    },
+    {
+      "id": "208_Back_1",
+      "look_angle": -165.0,
+      "row": "Back",
+      "seat": 1,
+      "section": "208",
+      "tier": "upper",
+      "x": 13.95,
+      "y": 52.063,
+      "z": 23.0
+    }
+  ]
+}

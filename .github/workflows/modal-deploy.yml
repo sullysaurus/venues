@@ -1,0 +1,43 @@
+name: Deploy to Modal
+
+on:
+  push:
+    branches:
+      - master
+      - main
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Modal
+        run: pip install modal
+
+      - name: Deploy to Modal
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+        run: |
+          modal deploy modal_app.py
+
+      - name: Wait for deployment to stabilize
+        run: sleep 10
+
+      - name: Start Temporal Worker
+        run: |
+          echo "Starting Temporal worker..."
+          curl -X POST https://sullysaurus--venue-seat-views-fastapi-app.modal.run/worker/start || true
+          echo "Worker start request sent"
+
+      - name: Verify deployment
+        run: |
+          echo "Checking worker status..."
+          curl -s https://sullysaurus--venue-seat-views-fastapi-app.modal.run/worker/status | jq . || true

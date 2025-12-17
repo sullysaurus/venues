@@ -1,0 +1,12 @@
+{
+  "venue_id": "madison_square_garden",
+  "name": "Madison Square Garden",
+  "location": "New York, NY",
+  "type": "arena",
+  "prompt_details": {
+    "base": "Madison Square Garden, arena venue, packed crowd, realistic photography",
+    "hockey": "NHL hockey game, ice rink, hockey boards",
+    "basketball": "basketball game, hardwood court",
+    "concert": "concert, stage lighting, live music"
+  }
+}

@@ -1,0 +1,202 @@
+"""
+Temporal activities for file storage operations.
+
+These activities handle saving and loading files locally,
+providing durability checkpoints for the workflow.
+"""
+
+import base64
+import json
+from pathlib import Path
+from typing import Dict, List
+from temporalio import activity
+
+
+@activity.defn
+async def save_seats_json_activity(
+    venue_dir: str,
+    venue_id: str,
+    all_seats: List[dict],
+    anchor_seats: List[dict]
+) -> None:
+    """
+    Save seat data to JSON files.
+
+    Args:
+        venue_dir: Path to venue directory
+        venue_id: Venue identifier
+        all_seats: Complete list of generated seats
+        anchor_seats: Subset of seats for rendering
+    """
+    venue_path = Path(venue_dir)
+    venue_path.mkdir(parents=True, exist_ok=True)
+
+    # Save all seats
+    seats_path = venue_path / "seats.json"
+    with open(seats_path, 'w') as f:
+        json.dump({"venue": venue_id, "seats": all_seats}, f, indent=2)
+
+    # Save anchor seats
+    anchor_path = venue_path / "anchor_seats.json"
+    with open(anchor_path, 'w') as f:
+        json.dump(anchor_seats, f, indent=2)
+
+    activity.logger.info(f"Saved {len(all_seats)} seats and {len(anchor_seats)} anchors to {venue_dir}")
+
+
+@activity.defn
+async def save_blend_file_activity(venue_dir: str, model_data: Dict[str, str]) -> Dict[str, str]:
+    """
+    Save .blend file to local storage and preview image to Supabase.
+
+    Args:
+        venue_dir: Path to venue directory (e.g., "venues/venue-uuid")
+        model_data: Dict with 'blend_file' and optional 'preview_image' (both base64)
+
+    Returns:
+        Dict with paths/URLs to saved files
+    """
+    import os
+    from supabase import create_client
+
+    venue_path = Path(venue_dir)
+    venue_path.mkdir(parents=True, exist_ok=True)
+
+    # Extract venue_id from path (last component)
+    venue_id = venue_path.name
+
+    result = {}
+
+    # Save blend file locally (needed for depth map rendering)
+    blend_b64 = model_data.get("blend_file")
+    if blend_b64:
+        blend_path = venue_path / "venue_model.blend"
+        blend_bytes = base64.b64decode(blend_b64)
+        with open(blend_path, 'wb') as f:
+            f.write(blend_bytes)
+        result["blend_path"] = str(blend_path)
+        activity.logger.info(f"Saved blend file: {blend_path} ({len(blend_bytes)} bytes)")
+
+    # Upload preview image to Supabase Storage
+    preview_b64 = model_data.get("preview_image")
+    if preview_b64:
+        preview_bytes = base64.b64decode(preview_b64)
+
+        # Upload to Supabase
+        supabase_url = os.environ.get("SUPABASE_URL")
+        supabase_key = os.environ.get("SUPABASE_KEY")
+
+        if supabase_url and supabase_key:
+            try:
+                client = create_client(supabase_url, supabase_key)
+                file_path = f"{venue_id}/preview.png"
+
+                client.storage.from_("IMAGES").upload(
+                    file_path,
+                    preview_bytes,
+                    file_options={"content-type": "image/png", "upsert": "true"}
+                )
+
+                preview_url = client.storage.from_("IMAGES").get_public_url(file_path)
+                result["preview_url"] = preview_url
+                activity.logger.info(f"Uploaded preview to Supabase: {preview_url}")
+            except Exception as e:
+                activity.logger.warning(f"Failed to upload preview to Supabase: {e}")
+                # Fall back to local storage
+                preview_path = venue_path / "outputs" / "model_preview.png"
+                preview_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(preview_path, 'wb') as f:
+                    f.write(preview_bytes)
+                result["preview_path"] = str(preview_path)
+        else:
+            # No Supabase credentials, save locally
+            preview_path = venue_path / "outputs" / "model_preview.png"
+            preview_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(preview_path, 'wb') as f:
+                f.write(preview_bytes)
+            result["preview_path"] = str(preview_path)
+            activity.logger.info(f"Saved preview locally: {preview_path} ({len(preview_bytes)} bytes)")
+
+    return result
+
+
+@activity.defn
+async def save_depth_maps_activity(
+    venue_dir: str,
+    depth_maps: Dict[str, str]
+) -> Dict[str, str]:
+    """
+    Save depth maps to local storage.
+
+    Args:
+        venue_dir: Path to venue directory
+        depth_maps: Dictionary mapping seat_id to base64-encoded PNG
+
+    Returns:
+        Dictionary mapping seat_id to file path
+    """
+    depth_dir = Path(venue_dir) / "outputs" / "depth_maps"
+    depth_dir.mkdir(parents=True, exist_ok=True)
+
+    paths = {}
+    for seat_id, b64_data in depth_maps.items():
+        path = depth_dir / f"{seat_id}_depth.png"
+        with open(path, 'wb') as f:
+            f.write(base64.b64decode(b64_data))
+        paths[seat_id] = str(path)
+
+    activity.logger.info(f"Saved {len(paths)} depth maps to {depth_dir}")
+    return paths
+
+
+@activity.defn
+async def save_generated_images_activity(
+    venue_dir: str,
+    images: Dict[str, str]
+) -> Dict[str, str]:
+    """
+    Save generated images to local storage.
+
+    Args:
+        venue_dir: Path to venue directory
+        images: Dictionary mapping seat_id to base64-encoded JPEG
+
+    Returns:
+        Dictionary mapping seat_id to file path
+    """
+    images_dir = Path(venue_dir) / "outputs" / "final_images"
+    images_dir.mkdir(parents=True, exist_ok=True)
+
+    paths = {}
+    for seat_id, b64_data in images.items():
+        path = images_dir / f"{seat_id}_final.jpg"
+        with open(path, 'wb') as f:
+            f.write(base64.b64decode(b64_data))
+        paths[seat_id] = str(path)
+
+    activity.logger.info(f"Saved {len(paths)} images to {images_dir}")
+    return paths
+
+
+@activity.defn
+async def load_existing_images_activity(venue_dir: str) -> Dict[str, str]:
+    """
+    Load existing generated images for resume capability.
+
+    Args:
+        venue_dir: Path to venue directory
+
+    Returns:
+        Dictionary mapping seat_id to file path (not bytes, to save memory)
+    """
+    images_dir = Path(venue_dir) / "outputs" / "final_images"
+    if not images_dir.exists():
+        return {}
+
+    result = {}
+    for path in images_dir.glob("*_final.jpg"):
+        seat_id = path.stem.replace("_final", "")
+        result[seat_id] = str(path)
+
+    activity.logger.info(f"Found {len(result)} existing images in {images_dir}")
+    return result
