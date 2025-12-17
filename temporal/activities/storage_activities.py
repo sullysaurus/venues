@@ -47,75 +47,99 @@ async def save_seats_json_activity(
 @activity.defn
 async def save_blend_file_activity(venue_dir: str, model_data: Dict[str, str]) -> Dict[str, str]:
     """
-    Save .blend file to local storage and preview image to Supabase.
+    Save .blend file and preview image to Supabase Storage.
 
     Args:
         venue_dir: Path to venue directory (e.g., "venues/venue-uuid")
         model_data: Dict with 'blend_file' and optional 'preview_image' (both base64)
 
     Returns:
-        Dict with paths/URLs to saved files
+        Dict with URLs to saved files
     """
     import os
     from supabase import create_client
 
     venue_path = Path(venue_dir)
-    venue_path.mkdir(parents=True, exist_ok=True)
-
-    # Extract venue_id from path (last component)
     venue_id = venue_path.name
 
     result = {}
 
-    # Save blend file locally (needed for depth map rendering)
+    # Get Supabase client
+    supabase_url = os.environ.get("SUPABASE_URL")
+    supabase_key = os.environ.get("SUPABASE_KEY")
+    client = None
+
+    if supabase_url and supabase_key:
+        try:
+            client = create_client(supabase_url, supabase_key)
+        except Exception as e:
+            activity.logger.warning(f"Failed to create Supabase client: {e}")
+
+    # Upload blend file to Supabase
     blend_b64 = model_data.get("blend_file")
     if blend_b64:
-        blend_path = venue_path / "venue_model.blend"
         blend_bytes = base64.b64decode(blend_b64)
-        with open(blend_path, 'wb') as f:
-            f.write(blend_bytes)
-        result["blend_path"] = str(blend_path)
-        activity.logger.info(f"Saved blend file: {blend_path} ({len(blend_bytes)} bytes)")
 
-    # Upload preview image to Supabase Storage
+        if client:
+            try:
+                file_path = f"{venue_id}/venue_model.blend"
+                client.storage.from_("IMAGES").upload(
+                    file_path,
+                    blend_bytes,
+                    file_options={"content-type": "application/octet-stream", "upsert": "true"}
+                )
+                blend_url = client.storage.from_("IMAGES").get_public_url(file_path)
+                result["blend_url"] = blend_url
+                activity.logger.info(f"Uploaded blend file to Supabase: {file_path} ({len(blend_bytes)} bytes)")
+            except Exception as e:
+                activity.logger.warning(f"Failed to upload blend to Supabase: {e}")
+                # Fall back to local
+                venue_path.mkdir(parents=True, exist_ok=True)
+                blend_path = venue_path / "venue_model.blend"
+                with open(blend_path, 'wb') as f:
+                    f.write(blend_bytes)
+                result["blend_path"] = str(blend_path)
+        else:
+            # No Supabase, save locally
+            venue_path.mkdir(parents=True, exist_ok=True)
+            blend_path = venue_path / "venue_model.blend"
+            with open(blend_path, 'wb') as f:
+                f.write(blend_bytes)
+            result["blend_path"] = str(blend_path)
+            activity.logger.info(f"Saved blend file locally: {blend_path} ({len(blend_bytes)} bytes)")
+
+    # Upload preview image to Supabase
     preview_b64 = model_data.get("preview_image")
     if preview_b64:
         preview_bytes = base64.b64decode(preview_b64)
 
-        # Upload to Supabase
-        supabase_url = os.environ.get("SUPABASE_URL")
-        supabase_key = os.environ.get("SUPABASE_KEY")
-
-        if supabase_url and supabase_key:
+        if client:
             try:
-                client = create_client(supabase_url, supabase_key)
                 file_path = f"{venue_id}/preview.png"
-
                 client.storage.from_("IMAGES").upload(
                     file_path,
                     preview_bytes,
                     file_options={"content-type": "image/png", "upsert": "true"}
                 )
-
                 preview_url = client.storage.from_("IMAGES").get_public_url(file_path)
                 result["preview_url"] = preview_url
-                activity.logger.info(f"Uploaded preview to Supabase: {preview_url}")
+                activity.logger.info(f"Uploaded preview to Supabase: {file_path}")
             except Exception as e:
                 activity.logger.warning(f"Failed to upload preview to Supabase: {e}")
-                # Fall back to local storage
+                # Fall back to local
                 preview_path = venue_path / "outputs" / "model_preview.png"
                 preview_path.parent.mkdir(parents=True, exist_ok=True)
                 with open(preview_path, 'wb') as f:
                     f.write(preview_bytes)
                 result["preview_path"] = str(preview_path)
         else:
-            # No Supabase credentials, save locally
+            # No Supabase, save locally
             preview_path = venue_path / "outputs" / "model_preview.png"
             preview_path.parent.mkdir(parents=True, exist_ok=True)
             with open(preview_path, 'wb') as f:
                 f.write(preview_bytes)
             result["preview_path"] = str(preview_path)
-            activity.logger.info(f"Saved preview locally: {preview_path} ({len(preview_bytes)} bytes)")
+            activity.logger.info(f"Saved preview locally: {preview_path}")
 
     return result
 
