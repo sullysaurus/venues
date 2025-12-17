@@ -48,6 +48,59 @@ async def fetch_reference_image(url: str) -> Optional[str]:
         return None
 
 
+@router.get("/health/check")
+async def health_check():
+    """
+    Health check endpoint - verifies Temporal connection and worker status.
+    """
+    from temporal.client import TASK_QUEUE
+    import os
+
+    result = {
+        "temporal_connected": False,
+        "task_queue": TASK_QUEUE,
+        "recent_workflows": [],
+        "config": {
+            "namespace": os.environ.get("TEMPORAL_NAMESPACE", "not set"),
+            "address": os.environ.get("TEMPORAL_ADDRESS", "not set")[:30] + "..." if os.environ.get("TEMPORAL_ADDRESS") else "not set",
+        }
+    }
+
+    try:
+        client = await get_temporal_client()
+        result["temporal_connected"] = True
+
+        # List recent workflows to see activity
+        workflows = []
+        async for workflow in client.list_workflows(
+            query="ORDER BY StartTime DESC",
+            page_size=5
+        ):
+            workflows.append({
+                "id": workflow.id,
+                "status": workflow.status.name,
+                "start_time": workflow.start_time.isoformat() if workflow.start_time else None,
+            })
+        result["recent_workflows"] = workflows
+
+        # Check if any workflows are stuck (running for too long without progress)
+        running_count = sum(1 for w in workflows if w["status"] == "RUNNING")
+        result["running_workflows"] = running_count
+
+        if running_count > 0 and len(workflows) > 0:
+            result["worker_status"] = "LIKELY_RUNNING" if any(w["status"] == "COMPLETED" for w in workflows) else "POSSIBLY_NOT_CONNECTED"
+        elif len(workflows) == 0:
+            result["worker_status"] = "NO_WORKFLOWS_YET"
+        else:
+            result["worker_status"] = "OK"
+
+    except Exception as e:
+        result["error"] = str(e)
+        result["worker_status"] = "TEMPORAL_CONNECTION_FAILED"
+
+    return result
+
+
 @router.post("/", response_model=PipelineStartResponse)
 async def start_pipeline(request: PipelineRequest):
     """
