@@ -1139,6 +1139,8 @@ async def temporal_worker():
         save_depth_maps_activity,
         save_generated_images_activity,
         load_existing_images_activity,
+        load_existing_blend_activity,
+        load_existing_depth_maps_activity,
     )
 
     # Get Temporal credentials from secrets
@@ -1177,12 +1179,14 @@ async def temporal_worker():
             save_depth_maps_activity,
             save_generated_images_activity,
             load_existing_images_activity,
+            load_existing_blend_activity,
+            load_existing_depth_maps_activity,
         ],
     )
 
     print("Starting Temporal worker on task queue: venue-pipeline-queue")
     print(f"Registered workflow: VenuePipelineWorkflow")
-    print(f"Registered {9} activities")
+    print(f"Registered {11} activities")
 
     # Run for 23 hours (Modal will restart after 24h timeout)
     try:
