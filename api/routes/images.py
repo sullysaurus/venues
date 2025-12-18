@@ -95,18 +95,51 @@ async def list_venue_files(venue_id: str):
 
     try:
         client = get_supabase_client()
-        files = client.storage.from_("IMAGES").list(venue_id)
-        return {
-            "venue_id": venue_id,
-            "files": [
-                {
+        all_files = []
+
+        # List files in root venue folder
+        root_files = client.storage.from_("IMAGES").list(venue_id)
+        for f in root_files:
+            if f.get("id"):  # Skip folder entries (they have no id)
+                all_files.append({
+                    "path": f"{venue_id}/{f['name']}",
                     "name": f["name"],
                     "size": f.get("metadata", {}).get("size"),
                     "updated_at": f.get("updated_at"),
-                }
-                for f in files
-            ],
-            "count": len(files),
+                })
+
+        # List files in depth_maps subfolder
+        try:
+            depth_files = client.storage.from_("IMAGES").list(f"{venue_id}/depth_maps")
+            for f in depth_files:
+                if f.get("id"):
+                    all_files.append({
+                        "path": f"{venue_id}/depth_maps/{f['name']}",
+                        "name": f["name"],
+                        "size": f.get("metadata", {}).get("size"),
+                        "updated_at": f.get("updated_at"),
+                    })
+        except Exception:
+            pass  # Folder may not exist
+
+        # List files in final_images subfolder
+        try:
+            image_files = client.storage.from_("IMAGES").list(f"{venue_id}/final_images")
+            for f in image_files:
+                if f.get("id"):
+                    all_files.append({
+                        "path": f"{venue_id}/final_images/{f['name']}",
+                        "name": f["name"],
+                        "size": f.get("metadata", {}).get("size"),
+                        "updated_at": f.get("updated_at"),
+                    })
+        except Exception:
+            pass  # Folder may not exist
+
+        return {
+            "venue_id": venue_id,
+            "files": all_files,
+            "count": len(all_files),
         }
     except Exception as e:
         return {"venue_id": venue_id, "error": str(e), "files": []}

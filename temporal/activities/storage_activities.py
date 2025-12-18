@@ -150,27 +150,66 @@ async def save_depth_maps_activity(
     depth_maps: Dict[str, str]
 ) -> Dict[str, str]:
     """
-    Save depth maps to local storage.
+    Save depth maps to Supabase Storage.
 
     Args:
-        venue_dir: Path to venue directory
+        venue_dir: Path to venue directory (e.g., "venues/venue-uuid")
         depth_maps: Dictionary mapping seat_id to base64-encoded PNG
 
     Returns:
-        Dictionary mapping seat_id to file path
+        Dictionary mapping seat_id to Supabase URL
     """
-    depth_dir = Path(venue_dir) / "outputs" / "depth_maps"
-    depth_dir.mkdir(parents=True, exist_ok=True)
+    import os
+    from supabase import create_client
 
-    paths = {}
+    venue_path = Path(venue_dir)
+    venue_id = venue_path.name
+
+    # Get Supabase client
+    supabase_url = os.environ.get("SUPABASE_URL")
+    supabase_key = os.environ.get("SUPABASE_KEY")
+    client = None
+
+    if supabase_url and supabase_key:
+        try:
+            client = create_client(supabase_url, supabase_key)
+        except Exception as e:
+            activity.logger.warning(f"Failed to create Supabase client: {e}")
+
+    urls = {}
     for seat_id, b64_data in depth_maps.items():
-        path = depth_dir / f"{seat_id}_depth.png"
-        with open(path, 'wb') as f:
-            f.write(base64.b64decode(b64_data))
-        paths[seat_id] = str(path)
+        image_bytes = base64.b64decode(b64_data)
 
-    activity.logger.info(f"Saved {len(paths)} depth maps to {depth_dir}")
-    return paths
+        if client:
+            try:
+                file_path = f"{venue_id}/depth_maps/{seat_id}_depth.png"
+                client.storage.from_("IMAGES").upload(
+                    file_path,
+                    image_bytes,
+                    file_options={"content-type": "image/png", "upsert": "true"}
+                )
+                url = client.storage.from_("IMAGES").get_public_url(file_path)
+                urls[seat_id] = url
+            except Exception as e:
+                activity.logger.warning(f"Failed to upload depth map {seat_id}: {e}")
+                # Fall back to local
+                depth_dir = Path(venue_dir) / "outputs" / "depth_maps"
+                depth_dir.mkdir(parents=True, exist_ok=True)
+                path = depth_dir / f"{seat_id}_depth.png"
+                with open(path, 'wb') as f:
+                    f.write(image_bytes)
+                urls[seat_id] = str(path)
+        else:
+            # No Supabase, save locally
+            depth_dir = Path(venue_dir) / "outputs" / "depth_maps"
+            depth_dir.mkdir(parents=True, exist_ok=True)
+            path = depth_dir / f"{seat_id}_depth.png"
+            with open(path, 'wb') as f:
+                f.write(image_bytes)
+            urls[seat_id] = str(path)
+
+    activity.logger.info(f"Saved {len(urls)} depth maps to Supabase")
+    return urls
 
 
 @activity.defn
@@ -179,27 +218,66 @@ async def save_generated_images_activity(
     images: Dict[str, str]
 ) -> Dict[str, str]:
     """
-    Save generated images to local storage.
+    Save generated images to Supabase Storage.
 
     Args:
-        venue_dir: Path to venue directory
+        venue_dir: Path to venue directory (e.g., "venues/venue-uuid")
         images: Dictionary mapping seat_id to base64-encoded JPEG
 
     Returns:
-        Dictionary mapping seat_id to file path
+        Dictionary mapping seat_id to Supabase URL
     """
-    images_dir = Path(venue_dir) / "outputs" / "final_images"
-    images_dir.mkdir(parents=True, exist_ok=True)
+    import os
+    from supabase import create_client
 
-    paths = {}
+    venue_path = Path(venue_dir)
+    venue_id = venue_path.name
+
+    # Get Supabase client
+    supabase_url = os.environ.get("SUPABASE_URL")
+    supabase_key = os.environ.get("SUPABASE_KEY")
+    client = None
+
+    if supabase_url and supabase_key:
+        try:
+            client = create_client(supabase_url, supabase_key)
+        except Exception as e:
+            activity.logger.warning(f"Failed to create Supabase client: {e}")
+
+    urls = {}
     for seat_id, b64_data in images.items():
-        path = images_dir / f"{seat_id}_final.jpg"
-        with open(path, 'wb') as f:
-            f.write(base64.b64decode(b64_data))
-        paths[seat_id] = str(path)
+        image_bytes = base64.b64decode(b64_data)
 
-    activity.logger.info(f"Saved {len(paths)} images to {images_dir}")
-    return paths
+        if client:
+            try:
+                file_path = f"{venue_id}/final_images/{seat_id}_final.jpg"
+                client.storage.from_("IMAGES").upload(
+                    file_path,
+                    image_bytes,
+                    file_options={"content-type": "image/jpeg", "upsert": "true"}
+                )
+                url = client.storage.from_("IMAGES").get_public_url(file_path)
+                urls[seat_id] = url
+            except Exception as e:
+                activity.logger.warning(f"Failed to upload image {seat_id}: {e}")
+                # Fall back to local
+                images_dir = Path(venue_dir) / "outputs" / "final_images"
+                images_dir.mkdir(parents=True, exist_ok=True)
+                path = images_dir / f"{seat_id}_final.jpg"
+                with open(path, 'wb') as f:
+                    f.write(image_bytes)
+                urls[seat_id] = str(path)
+        else:
+            # No Supabase, save locally
+            images_dir = Path(venue_dir) / "outputs" / "final_images"
+            images_dir.mkdir(parents=True, exist_ok=True)
+            path = images_dir / f"{seat_id}_final.jpg"
+            with open(path, 'wb') as f:
+                f.write(image_bytes)
+            urls[seat_id] = str(path)
+
+    activity.logger.info(f"Saved {len(urls)} images to Supabase")
+    return urls
 
 
 @activity.defn
