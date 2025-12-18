@@ -146,6 +146,41 @@ async def get_venue_assets(venue_id: str):
     return result
 
 
+@router.get("/{venue_id}/depth-maps")
+async def list_depth_maps(venue_id: str):
+    """List all depth maps for a venue from Supabase Storage."""
+    from api.db.client import get_supabase_client
+
+    try:
+        client = get_supabase_client()
+        bucket = client.storage.from_("IMAGES")
+
+        depth_maps = []
+        try:
+            depth_files = bucket.list(f"{venue_id}/depth_maps")
+            for f in depth_files:
+                if f.get("id") and f.get("name", "").endswith(".png"):
+                    # Extract seat_id from filename (e.g., "101_Front_1_depth.png" -> "101_Front_1")
+                    seat_id = f["name"].replace("_depth.png", "")
+                    url = bucket.get_public_url(f"{venue_id}/depth_maps/{f['name']}")
+                    depth_maps.append({
+                        "id": seat_id,
+                        "url": url,
+                        "name": f["name"],
+                    })
+        except Exception as e:
+            # Folder may not exist yet
+            pass
+
+        return {
+            "venue_id": venue_id,
+            "depth_maps": depth_maps,
+            "count": len(depth_maps),
+        }
+    except Exception as e:
+        return {"venue_id": venue_id, "depth_maps": [], "count": 0, "error": str(e)}
+
+
 @router.get("/{venue_id}/files")
 async def list_venue_files(venue_id: str):
     """Debug endpoint: List all files in Supabase Storage for a venue."""

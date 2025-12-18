@@ -123,6 +123,11 @@ export function SelectConfigureSection({
         if (assets.has_preview && assets.preview_url) {
           setModelPreviewUrl(assets.preview_url);
         }
+
+        // Load depth maps if they exist
+        if (assets.has_depth_maps && assets.depth_map_count > 0) {
+          loadDepthMaps();
+        }
       } catch (e) {
         console.error('[Assets] Failed to check existing assets:', e);
       }
@@ -203,11 +208,12 @@ export function SelectConfigureSection({
   };
 
   const loadDepthMaps = async () => {
-    // Load depth maps from the venue's depth_maps directory
+    // Load depth maps from Supabase Storage via API
     try {
-      const response = await fetch(`/api/venues/${venueId}/depth-maps`);
+      const response = await fetch(`/api/images/${venueId}/depth-maps`);
       if (response.ok) {
         const data = await response.json();
+        console.log('[DepthMaps] Loaded:', data);
         setDepthMaps(data.depth_maps || []);
       }
     } catch (e) {
