@@ -926,8 +926,23 @@ def generate_ai_image(
                     "num_inference_steps": 28,
                 }
             )
+        elif model == "flux-controlnet" or model == "xlabs":
+            # XLabs Flux Dev ControlNet - explicit depth control
+            output = replicate.run(
+                "xlabs-ai/flux-dev-controlnet",
+                input={
+                    "prompt": f"{prompt}, stadium interior, arena view, professional photography",
+                    "control_image": depth_uri,
+                    "control_type": "depth",
+                    "control_strength": 0.65,  # 0.5-0.75 recommended for depth
+                    "steps": 28,
+                    "guidance": 3.5,
+                    "output_format": "jpg",
+                    "output_quality": 90,
+                }
+            )
         elif model == "flux-2":
-            # Flux 1.1 Pro: Latest high-quality Flux model
+            # Flux 1.1 Pro: NO depth support - prompt only (not recommended)
             output = replicate.run(
                 "black-forest-labs/flux-1.1-pro",
                 input={

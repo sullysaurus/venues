@@ -17,18 +17,20 @@ import SeatmapUploader from '@/components/SeatmapUploader';
 const EVENT_TYPES = [
   { value: 'hockey', label: 'Hockey', icon: '🏒' },
   { value: 'basketball', label: 'Basketball', icon: '🏀' },
-  { value: 'concert', label: 'Concert', icon: '🎤' },
+  { value: 'baseball', label: 'Baseball', icon: '⚾' },
   { value: 'football', label: 'Football', icon: '🏈' },
+  { value: 'soccer', label: 'Soccer', icon: '⚽' },
+  { value: 'concert', label: 'Concert', icon: '🎤' },
+  { value: 'theater', label: 'Theater', icon: '🎭' },
+  { value: 'custom', label: 'Custom', icon: '✏️' },
 ];
 
 // AI Models for image generation
-// NOTE: Only 'flux' and 'sdxl' actually use depth maps for structural conditioning
+// NOTE: Only depth-conditioned models work properly for seat views
 const AI_MODELS = [
-  { value: 'flux', label: 'Flux Depth Pro', description: 'Uses depth maps for accurate views', recommended: true },
-  { value: 'sdxl', label: 'SDXL ControlNet', description: 'Depth-conditioned, high quality' },
-  { value: 'flux-2', label: 'Flux 1.1 Pro', description: 'No depth - prompt only (not recommended)' },
-  { value: 'flux-schnell', label: 'Flux Schnell', description: 'Fast, no depth conditioning' },
-  { value: 'flux-dev', label: 'Flux Dev', description: 'No depth conditioning' },
+  { value: 'flux', label: 'Flux Depth Pro', description: 'Official BFL depth model', recommended: true },
+  { value: 'flux-controlnet', label: 'Flux ControlNet', description: 'XLabs depth - more control' },
+  { value: 'sdxl', label: 'SDXL ControlNet', description: 'Older but reliable' },
 ];
 
 // Prompt templates for different venue types
@@ -46,16 +48,34 @@ const PROMPT_TEMPLATES = [
     prompt: 'Photorealistic view from arena seat, NBA basketball court, hardwood floor, basketball hoops, arena scoreboard, empty arena, professional photography'
   },
   {
+    name: 'baseball',
+    label: 'Baseball Stadium',
+    icon: '⚾',
+    prompt: 'Photorealistic view from stadium seat, MLB baseball stadium, grass field, dirt infield, pitcher mound, outfield wall, empty stadium, professional sports photography'
+  },
+  {
+    name: 'football',
+    label: 'Football Stadium',
+    icon: '🏈',
+    prompt: 'Photorealistic view from stadium seat, NFL football field, yard lines, goalposts, empty stadium, professional sports photography'
+  },
+  {
+    name: 'soccer',
+    label: 'Soccer Stadium',
+    icon: '⚽',
+    prompt: 'Photorealistic view from stadium seat, soccer pitch, grass field, goal nets, penalty box, empty stadium, professional sports photography'
+  },
+  {
     name: 'concert',
     label: 'Concert Venue',
     icon: '🎤',
     prompt: 'Photorealistic view from arena seat, concert stage, dramatic stage lighting, LED screens, empty venue, professional photography'
   },
   {
-    name: 'football',
-    label: 'Football Stadium',
-    icon: '🏈',
-    prompt: 'Photorealistic view from stadium seat, football field, yard lines, goalposts, empty stadium, professional sports photography'
+    name: 'theater',
+    label: 'Theater',
+    icon: '🎭',
+    prompt: 'Photorealistic view from theater seat, stage with curtains, orchestra pit, balcony seating, elegant interior, empty theater, professional photography'
   },
 ];
 
@@ -107,6 +127,7 @@ export default function VenueDetailPage() {
   const [seatmapUrl, setSeatmapUrl] = useState<string | null>(null);
   const [referenceUrl, setReferenceUrl] = useState<string | null>(null);
   const [eventType, setEventType] = useState<string>('hockey');
+  const [customEventType, setCustomEventType] = useState<string>('');
   const [showSeatmapPreview, setShowSeatmapPreview] = useState(false);
 
   // Extraction state
@@ -259,17 +280,32 @@ export default function VenueDetailPage() {
       try {
         const response = await pipelinesApi.getProgress(workflowId);
         setPipelineProgress(response.data);
-        if (response.data.stage === 'completed') {
-          queryClient.invalidateQueries({ queryKey: ['images', venueId] });
+
+        // Check for terminal states
+        if (['completed', 'failed', 'cancelled'].includes(response.data.stage)) {
+          // Clear workflow state
+          setWorkflowId(null);
           setActiveStep(null);
-          // Reload assets
-          const assets = await imagesApi.getAssets(venueId);
-          setExistingAssets(assets.data);
-          if (assets.data.has_preview) {
-            setModelPreviewUrl(`/api/images/${venueId}/preview`);
-          }
-          if (assets.data.has_depth_maps) {
-            loadDepthMaps();
+
+          if (response.data.stage === 'completed') {
+            // Force refetch images
+            await queryClient.invalidateQueries({ queryKey: ['images', venueId] });
+            await queryClient.refetchQueries({ queryKey: ['images', venueId] });
+
+            // Auto-expand generated images if we generated some
+            if (response.data.images_generated > 0) {
+              setShowGeneratedImages(true);
+            }
+
+            // Reload assets
+            const assets = await imagesApi.getAssets(venueId);
+            setExistingAssets(assets.data);
+            if (assets.data.has_preview) {
+              setModelPreviewUrl(`/api/images/${venueId}/preview`);
+            }
+            if (assets.data.has_depth_maps) {
+              loadDepthMaps();
+            }
           }
         }
       } catch (error) {
@@ -562,6 +598,15 @@ export default function VenueDetailPage() {
                   </button>
                 ))}
               </div>
+              {eventType === 'custom' && (
+                <input
+                  type="text"
+                  value={customEventType}
+                  onChange={(e) => setCustomEventType(e.target.value)}
+                  placeholder="Enter custom event type..."
+                  className="mt-2 w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                />
+              )}
             </div>
 
             {/* Collapsible Preview */}
@@ -1199,13 +1244,28 @@ export default function VenueDetailPage() {
                 )}
               </>
             ) : activeStep === 'images' || generateImagesMutation.isPending ? (
-              <div className="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+              <div className="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg space-y-3">
                 <div className="flex items-center gap-3">
                   <Loader2 className="w-5 h-5 animate-spin text-purple-500" />
-                  <span className="text-purple-700 dark:text-purple-300">
+                  <span className="text-purple-700 dark:text-purple-300 font-medium">
                     Generating images... {pipelineProgress?.images_generated || 0} / {depthMapCount}
                   </span>
                 </div>
+                {/* Progress bar */}
+                <div className="w-full h-2 bg-purple-200 dark:bg-purple-800 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-purple-600 rounded-full transition-all duration-500"
+                    style={{ width: `${depthMapCount > 0 ? ((pipelineProgress?.images_generated || 0) / depthMapCount) * 100 : 0}%` }}
+                  />
+                </div>
+                {pipelineProgress?.message && (
+                  <p className="text-sm text-purple-600 dark:text-purple-400">{pipelineProgress.message}</p>
+                )}
+                {(pipelineProgress?.failed_items?.length || 0) > 0 && (
+                  <p className="text-sm text-red-600">
+                    {pipelineProgress?.failed_items?.length} failed
+                  </p>
+                )}
               </div>
             ) : (
               <button
