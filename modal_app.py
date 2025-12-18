@@ -1090,6 +1090,7 @@ def fastapi_app():
 # ============== TEMPORAL WORKER ==============
 
 # Image for Temporal worker - includes the temporal package from local source
+# Rebuild trigger: 2025-12-18-v2
 temporal_worker_image = (
     modal.Image.debian_slim(python_version="3.11")
     .pip_install(
