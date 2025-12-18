@@ -70,27 +70,40 @@ async def health_check():
         client = await get_temporal_client()
         result["temporal_connected"] = True
 
-        # List recent workflows to see activity
+        # List recent workflows - try different query approaches
         workflows = []
-        async for workflow in client.list_workflows(
-            query="ORDER BY StartTime DESC",
-            page_size=5
-        ):
-            workflows.append({
-                "id": workflow.id,
-                "status": workflow.status.name,
-                "start_time": workflow.start_time.isoformat() if workflow.start_time else None,
-            })
+        try:
+            # Try listing without ORDER BY (not supported in all Temporal versions)
+            count = 0
+            async for workflow in client.list_workflows(page_size=10):
+                workflows.append({
+                    "id": workflow.id,
+                    "status": workflow.status.name,
+                    "start_time": workflow.start_time.isoformat() if workflow.start_time else None,
+                })
+                count += 1
+                if count >= 5:
+                    break
+        except Exception as list_err:
+            result["list_error"] = str(list_err)
+
         result["recent_workflows"] = workflows
 
         # Check if any workflows are stuck (running for too long without progress)
         running_count = sum(1 for w in workflows if w["status"] == "RUNNING")
+        completed_count = sum(1 for w in workflows if w["status"] == "COMPLETED")
         result["running_workflows"] = running_count
+        result["completed_workflows"] = completed_count
 
-        if running_count > 0 and len(workflows) > 0:
-            result["worker_status"] = "LIKELY_RUNNING" if any(w["status"] == "COMPLETED" for w in workflows) else "POSSIBLY_NOT_CONNECTED"
+        if running_count > 0 and completed_count == 0:
+            result["worker_status"] = "POSSIBLY_NOT_CONNECTED"
+            result["message"] = f"{running_count} workflows running but none completed - worker may not be processing"
+        elif running_count > 0 and completed_count > 0:
+            result["worker_status"] = "OK"
+            result["message"] = "Worker is processing workflows"
         elif len(workflows) == 0:
             result["worker_status"] = "NO_WORKFLOWS_YET"
+            result["message"] = "No workflows found - try starting a pipeline"
         else:
             result["worker_status"] = "OK"
 
