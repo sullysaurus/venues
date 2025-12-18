@@ -232,6 +232,9 @@ class VenuePipelineWorkflow:
                 if all_depth_maps:
                     workflow.logger.info(f"Loaded {len(all_depth_maps)} existing depth maps")
                     self._progress.depth_maps_rendered = len(all_depth_maps)
+                    # Set depth_paths for the result (already in Supabase)
+                    for seat_id in all_depth_maps:
+                        depth_paths[seat_id] = f"supabase://{input.venue_id}/depth_maps/{seat_id}_depth.png"
                 else:
                     workflow.logger.warning("No existing depth maps found, rendering new ones")
 
