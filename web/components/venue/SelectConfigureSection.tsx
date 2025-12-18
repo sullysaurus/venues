@@ -17,13 +17,6 @@ const AI_MODELS = [
   { value: 'dall-e-3', label: 'DALL-E 3', description: 'OpenAI (no depth conditioning)', provider: 'OpenAI' },
 ];
 
-const SURFACE_TYPES = [
-  { value: 'rink', label: 'Hockey Rink', icon: '🏒', description: 'Ice surface with boards' },
-  { value: 'court', label: 'Basketball Court', icon: '🏀', description: 'Hardwood floor' },
-  { value: 'stage', label: 'Concert Stage', icon: '🎤', description: 'Elevated stage platform' },
-  { value: 'field', label: 'Football Field', icon: '🏈', description: 'Grass field with end zones' },
-];
-
 // Pipeline step definitions
 const PIPELINE_STEPS = [
   {
@@ -83,10 +76,12 @@ export function SelectConfigureSection({
     'A photorealistic view from a stadium seat showing the field/stage, crowd, and venue atmosphere'
   );
   const [model, setModel] = useState('flux');  // Flux Depth Pro - best for venues
-  const [surfaceType, setSurfaceType] = useState<'rink' | 'court' | 'stage' | 'field'>('rink');
   const [useIpAdapter, setUseIpAdapter] = useState(hasReferenceImage);
   const [ipAdapterScale, setIpAdapterScale] = useState(0.6);
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  // Section selection is now in Step 2
+  const [showSectionSelector, setShowSectionSelector] = useState(false);
+  // AI settings are now in Step 3
+  const [showAISettings, setShowAISettings] = useState(false);
   // State for completed steps and existing assets
   const [completedStep, setCompletedStep] = useState<CompletedStep>(images.length > 0 ? 'images' : 'none');
   const [existingAssets, setExistingAssets] = useState<VenueAssets | null>(null);
@@ -231,21 +226,15 @@ export function SelectConfigureSection({
     mutationFn: () => {
       console.log('[Build] Starting build mutation...');
       setActiveStep('model'); // Track which step is running
-      const selectedSectionsData: Record<string, Section> = {};
-      selectedSections.forEach((id) => {
-        if (sections[id]) {
-          selectedSectionsData[id] = sections[id];
-        }
-      });
 
+      // Build model for ALL sections (not just selected)
       return pipelinesApi.start({
         venue_id: venueId,
-        sections: selectedSectionsData,
+        sections: sections,  // Use all sections
         prompt,
-        model: useIpAdapter ? 'ip_adapter' : model,
-        ip_adapter_scale: useIpAdapter ? ipAdapterScale : 0,
+        model: 'flux',  // Default model for building
         stop_after_model: true,  // Stop after building model
-        surface_type: surfaceType,
+        surface_type: 'rink',  // Default surface (event type is just a tag now)
       });
     },
     onSuccess: (response) => {
@@ -262,6 +251,8 @@ export function SelectConfigureSection({
     mutationFn: () => {
       console.log('[Render] Starting render mutation...');
       setActiveStep('depths'); // Track which step is running
+
+      // Build sections data for SELECTED sections only
       const selectedSectionsData: Record<string, Section> = {};
       selectedSections.forEach((id) => {
         if (sections[id]) {
@@ -273,11 +264,10 @@ export function SelectConfigureSection({
         venue_id: venueId,
         sections: selectedSectionsData,
         prompt,
-        model: useIpAdapter ? 'ip_adapter' : model,
-        ip_adapter_scale: useIpAdapter ? ipAdapterScale : 0,
+        model: 'flux',
         stop_after_depths: true,  // Stop after depth maps
         skip_model_build: existingAssets?.has_model ?? false,  // Use existing model if available
-        surface_type: surfaceType,
+        surface_type: 'rink',  // Default (event type is just a tag now)
       });
     },
     onSuccess: (response) => {
@@ -294,6 +284,8 @@ export function SelectConfigureSection({
     mutationFn: () => {
       console.log('[Generate] Starting generate mutation...');
       setActiveStep('images'); // Track which step is running
+
+      // Uses all sections since we're generating from existing depth maps
       const selectedSectionsData: Record<string, Section> = {};
       selectedSections.forEach((id) => {
         if (sections[id]) {
@@ -308,9 +300,9 @@ export function SelectConfigureSection({
         model: useIpAdapter ? 'ip_adapter' : model,
         ip_adapter_scale: useIpAdapter ? ipAdapterScale : 0,
         skip_ai_generation: false,  // Run full pipeline
-        skip_model_build: existingAssets?.has_model ?? false,  // Use existing model if available
-        skip_depth_render: existingAssets?.has_depth_maps ?? false,  // Use existing depth maps if available
-        surface_type: surfaceType,
+        skip_model_build: existingAssets?.has_model ?? false,  // Use existing model
+        skip_depth_render: existingAssets?.has_depth_maps ?? false,  // Use existing depth maps
+        surface_type: 'rink',  // Default (event type is just a tag now)
       });
     },
     onSuccess: (response) => {
@@ -381,223 +373,29 @@ export function SelectConfigureSection({
   }
 
   return (
-    <div className="space-y-8">
-      {/* ============ CONFIGURATION SECTION ============ */}
-      <div className="space-y-6">
-        {/* Surface Type Selection */}
-        <div>
-          <h3 className="font-medium text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-            <span className="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 text-sm flex items-center justify-center">1</span>
-            Select Event Type
-          </h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-            {SURFACE_TYPES.map((type) => (
-              <button
-                key={type.value}
-                onClick={() => setSurfaceType(type.value as any)}
-                className={`p-3 rounded-lg border-2 text-left transition-all ${
-                  surfaceType === type.value
-                    ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
-                    : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'
-                }`}
-              >
-                <div className="text-2xl mb-1">{type.icon}</div>
-                <div className="font-medium text-sm text-gray-900 dark:text-white">
-                  {type.label}
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Section Selection */}
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-medium text-gray-900 dark:text-white flex items-center gap-2">
-              <span className="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 text-sm flex items-center justify-center">2</span>
-              Select Sections
-            </h3>
-            <div className="flex gap-2 text-sm">
-              <button onClick={handleSelectAll} className="text-blue-600 hover:underline">All</button>
-              <span className="text-gray-300">|</span>
-              <button onClick={handleSelectNone} className="text-gray-600 hover:underline">None</button>
+    <div className="space-y-6">
+      {/* Simple Summary - All sections available for 3D model */}
+      <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center">
+              <Layers className="w-5 h-5 text-white" />
             </div>
-          </div>
-
-          {/* Tier Groups */}
-          <div className="space-y-3">
-            {tiers.map((tier) => {
-              const tierSections = sectionsByTier[tier];
-              const tierSelectedCount = tierSections.filter((s) =>
-                selectedSections.has(s.section_id)
-              ).length;
-              const allTierSelected = tierSelectedCount === tierSections.length;
-
-              return (
-                <div
-                  key={tier}
-                  className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden"
-                >
-                  <div
-                    className={`flex items-center justify-between p-3 cursor-pointer ${getTierBgColor(tier)}`}
-                    onClick={() => handleSelectTier(tier)}
-                  >
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="checkbox"
-                        checked={allTierSelected}
-                        onChange={() => handleSelectTier(tier)}
-                        className="w-4 h-4 rounded border-gray-300 text-blue-600"
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                      <span className="font-medium capitalize">{tier}</span>
-                      <span className="text-sm text-gray-500">
-                        ({tierSelectedCount}/{tierSections.length})
-                      </span>
-                    </div>
-                  </div>
-                  <div className="p-3 flex flex-wrap gap-2 bg-white dark:bg-gray-800">
-                    {tierSections.map((section) => {
-                      const isSelected = selectedSections.has(section.section_id);
-                      return (
-                        <button
-                          key={section.section_id}
-                          onClick={() => handleToggleSection(section.section_id)}
-                          className={`px-3 py-1 text-sm rounded-full border transition-colors ${
-                            isSelected
-                              ? 'bg-blue-600 text-white border-blue-600'
-                              : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:border-blue-400'
-                          }`}
-                        >
-                          {section.section_id}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Summary */}
-        <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
-          <div className="flex items-center justify-between">
             <div>
-              <span className="text-2xl font-bold text-gray-900 dark:text-white">{selectedCount}</span>
-              <span className="text-gray-500 ml-2">sections selected</span>
-            </div>
-            <div className="text-right">
-              <span className="text-2xl font-bold text-purple-600">{imageCount}</span>
-              <span className="text-gray-500 ml-2">images will be generated</span>
-            </div>
-          </div>
-          <p className="text-sm text-gray-500 mt-2">
-            3 views per section: Front Row, Middle Row, Back Row
-          </p>
-        </div>
-
-        {/* Advanced Settings */}
-        <button
-          onClick={() => setShowAdvanced(!showAdvanced)}
-          className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900"
-        >
-          <Settings className="w-4 h-4" />
-          <span>{showAdvanced ? 'Hide' : 'Show'} Advanced Settings</span>
-          {showAdvanced ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-        </button>
-
-        {showAdvanced && (
-          <div className="space-y-4 p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
-            {/* Model Selection */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                AI Model
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                {AI_MODELS.map((m) => (
-                  <button
-                    key={m.value}
-                    type="button"
-                    onClick={() => setModel(m.value)}
-                    disabled={useIpAdapter}
-                    className={`p-2 rounded-lg border-2 text-left transition-colors relative ${
-                      model === m.value && !useIpAdapter
-                        ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-                        : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'
-                    } ${useIpAdapter ? 'opacity-50' : ''}`}
-                  >
-                    {(m as any).recommended && (
-                      <span className="absolute -top-2 -right-2 px-1.5 py-0.5 bg-green-500 text-white text-xs rounded-full">
-                        Best
-                      </span>
-                    )}
-                    <div className="font-medium text-gray-900 dark:text-white text-sm">{m.label}</div>
-                    <div className="text-xs text-gray-500">{m.description}</div>
-                    <div className="text-xs text-blue-500 mt-1">{m.provider}</div>
-                  </button>
-                ))}
+              <div className="font-medium text-blue-900 dark:text-blue-100">
+                {sectionCount} sections ready
+              </div>
+              <div className="text-sm text-blue-600 dark:text-blue-400">
+                3 views per section: Front, Middle, Back Row
               </div>
             </div>
-
-            {/* IP-Adapter Toggle */}
-            {hasReferenceImage && (
-              <div className="p-3 border border-purple-200 dark:border-purple-800 rounded-lg bg-purple-50 dark:bg-purple-900/20">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    <input
-                      type="checkbox"
-                      id="useIpAdapter"
-                      checked={useIpAdapter}
-                      onChange={(e) => setUseIpAdapter(e.target.checked)}
-                      className="mr-3 h-4 w-4 text-purple-600 rounded"
-                    />
-                    <label htmlFor="useIpAdapter" className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-                      <ImageIcon className="w-4 h-4" />
-                      Use Reference Image Style
-                    </label>
-                  </div>
-                </div>
-                {useIpAdapter && (
-                  <div className="mt-3">
-                    <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">
-                      Style Strength: {ipAdapterScale.toFixed(1)}
-                    </label>
-                    <input
-                      type="range"
-                      min="0.3"
-                      max="1.0"
-                      step="0.1"
-                      value={ipAdapterScale}
-                      onChange={(e) => setIpAdapterScale(parseFloat(e.target.value))}
-                      className="w-full"
-                    />
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Prompt */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Image Prompt
-              </label>
-              <textarea
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                rows={2}
-                className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg
-                         bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              />
-            </div>
           </div>
-        )}
+        </div>
       </div>
 
       {/* ============ PIPELINE STEPS ============ */}
       <div className="space-y-4">
-        <h3 className="font-medium text-gray-900 dark:text-white flex items-center gap-2">
-          <span className="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 text-sm flex items-center justify-center">3</span>
+        <h3 className="font-medium text-gray-900 dark:text-white">
           Generate Views (3 Steps)
         </h3>
 
@@ -697,7 +495,7 @@ export function SelectConfigureSection({
                   ) : (
                     <button
                       onClick={handleStepClick}
-                      disabled={isDisabled || (step.id !== 'images' && selectedCount === 0) || (step.id === 'images' && availableDepthMaps === 0)}
+                      disabled={isDisabled || (step.id === 'depths' && selectedCount === 0) || (step.id === 'images' && availableDepthMaps === 0)}
                       className={`px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors ${
                         isAvailable
                           ? 'bg-purple-600 text-white hover:bg-purple-700'
@@ -705,10 +503,204 @@ export function SelectConfigureSection({
                       }`}
                     >
                       <Play className="w-4 h-4" />
-                      {step.id === 'model' ? 'Build' : step.id === 'depths' ? 'Render' : 'Generate'}
+                      {step.id === 'model' ? 'Build Model' : step.id === 'depths' ? 'Render Depths' : 'Generate Images'}
                     </button>
                   )}
                 </div>
+
+                {/* Step 2: Section Selection UI (for Render Depth Maps) */}
+                {step.id === 'depths' && !isCurrentlyRunning && !isCompleted && (
+                  <div className="px-4 pb-2">
+                    <button
+                      onClick={() => setShowSectionSelector(!showSectionSelector)}
+                      className="w-full text-left flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+                    >
+                      <span className="font-medium text-gray-700 dark:text-gray-300">
+                        {selectedCount === sectionCount ? 'All sections selected' : `${selectedCount} of ${sectionCount} sections selected`}
+                      </span>
+                      {showSectionSelector ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                    </button>
+                    {showSectionSelector && (
+                      <div className="mt-3 p-3 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900">
+                        {/* Quick Actions */}
+                        <div className="flex items-center gap-2 mb-3">
+                          <button
+                            onClick={handleSelectAll}
+                            className="px-3 py-1 text-sm bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded-lg hover:bg-purple-200 dark:hover:bg-purple-900/50"
+                          >
+                            Select All
+                          </button>
+                          <button
+                            onClick={handleSelectNone}
+                            className="px-3 py-1 text-sm bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700"
+                          >
+                            Clear
+                          </button>
+                          <span className="ml-auto text-sm text-gray-500">
+                            {selectedCount * 3} depth maps will be rendered
+                          </span>
+                        </div>
+
+                        {/* Tier Groups */}
+                        <div className="space-y-3 max-h-64 overflow-y-auto">
+                          {tiers.map((tier) => {
+                            const tierSections = sectionsByTier[tier] || [];
+                            const tierSelected = tierSections.filter((s) => selectedSections.has(s.section_id)).length;
+                            const allSelected = tierSelected === tierSections.length;
+
+                            return (
+                              <div key={tier} className={`p-2 rounded-lg ${getTierBgColor(tier)}`}>
+                                <button
+                                  onClick={() => handleSelectTier(tier)}
+                                  className="flex items-center gap-2 w-full text-left mb-2"
+                                >
+                                  <div className={`w-4 h-4 rounded border ${
+                                    allSelected
+                                      ? 'bg-purple-600 border-purple-600'
+                                      : tierSelected > 0
+                                        ? 'bg-purple-300 border-purple-400'
+                                        : 'border-gray-300 dark:border-gray-600'
+                                  } flex items-center justify-center`}>
+                                    {allSelected && <Check className="w-3 h-3 text-white" />}
+                                  </div>
+                                  <span className="font-medium capitalize text-gray-900 dark:text-white">
+                                    {tier} Level
+                                  </span>
+                                  <span className="text-sm text-gray-500 ml-auto">
+                                    {tierSelected}/{tierSections.length}
+                                  </span>
+                                </button>
+                                <div className="flex flex-wrap gap-1 pl-6">
+                                  {tierSections.map((section) => (
+                                    <button
+                                      key={section.section_id}
+                                      onClick={() => handleToggleSection(section.section_id)}
+                                      className={`px-2 py-0.5 text-xs rounded-full transition-colors ${
+                                        selectedSections.has(section.section_id)
+                                          ? 'bg-purple-600 text-white'
+                                          : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-600'
+                                      }`}
+                                    >
+                                      {section.section_id}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Step 3: AI Settings UI (for Generate AI Views) */}
+                {step.id === 'images' && !isCurrentlyRunning && completedStep === 'depths' && availableDepthMaps > 0 && (
+                  <div className="px-4 pb-2">
+                    <button
+                      onClick={() => setShowAISettings(!showAISettings)}
+                      className="w-full text-left flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+                    >
+                      <span className="font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                        <Settings className="w-4 h-4" />
+                        AI Generation Settings
+                      </span>
+                      {showAISettings ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                    </button>
+                    {showAISettings && (
+                      <div className="mt-3 p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 space-y-4">
+                        {/* AI Model Selection */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            AI Model
+                          </label>
+                          <select
+                            value={model}
+                            onChange={(e) => setModel(e.target.value)}
+                            disabled={useIpAdapter}
+                            className="w-full p-2 border rounded-lg bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white disabled:opacity-50"
+                          >
+                            {AI_MODELS.map((m) => (
+                              <option key={m.value} value={m.value}>
+                                {m.label} {m.recommended ? '(Recommended)' : ''} - {m.description}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Prompt */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            Scene Prompt
+                          </label>
+                          <textarea
+                            value={prompt}
+                            onChange={(e) => setPrompt(e.target.value)}
+                            rows={3}
+                            placeholder="Describe the venue atmosphere..."
+                            className="w-full p-3 border rounded-lg bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400 resize-none"
+                          />
+                          <p className="text-xs text-gray-500 mt-1">
+                            Tip: Include venue name, event type, and atmosphere details
+                          </p>
+                        </div>
+
+                        {/* Reference Image / IP-Adapter */}
+                        {hasReferenceImage && (
+                          <div className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
+                            <div className="flex items-center justify-between mb-3">
+                              <label className="flex items-center gap-2 text-sm font-medium text-purple-700 dark:text-purple-300">
+                                <ImageIcon className="w-4 h-4" />
+                                Use Reference Image (IP-Adapter)
+                              </label>
+                              <button
+                                onClick={() => setUseIpAdapter(!useIpAdapter)}
+                                className={`relative w-12 h-6 rounded-full transition-colors ${
+                                  useIpAdapter ? 'bg-purple-600' : 'bg-gray-300 dark:bg-gray-600'
+                                }`}
+                              >
+                                <span
+                                  className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
+                                    useIpAdapter ? 'translate-x-7' : 'translate-x-1'
+                                  }`}
+                                />
+                              </button>
+                            </div>
+                            {useIpAdapter && (
+                              <div>
+                                <label className="block text-xs text-purple-600 dark:text-purple-400 mb-1">
+                                  Style Transfer Strength: {Math.round(ipAdapterScale * 100)}%
+                                </label>
+                                <input
+                                  type="range"
+                                  min="0"
+                                  max="1"
+                                  step="0.1"
+                                  value={ipAdapterScale}
+                                  onChange={(e) => setIpAdapterScale(parseFloat(e.target.value))}
+                                  className="w-full"
+                                />
+                                <p className="text-xs text-purple-500 dark:text-purple-400 mt-1">
+                                  Higher = more similar to reference image
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Summary */}
+                        <div className="pt-3 border-t border-gray-200 dark:border-gray-700">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-gray-500">Ready to generate:</span>
+                            <span className="font-medium text-gray-900 dark:text-white">
+                              {availableDepthMaps} images from depth maps
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Progress Bar - Always visible */}
                 <div className="px-4 pb-4">

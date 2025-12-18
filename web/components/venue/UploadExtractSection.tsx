@@ -3,8 +3,16 @@
 import { useState, useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { seatmapsApi } from '@/lib/api';
-import { Loader2, Upload, Image as ImageIcon, ChevronDown, ChevronRight, Brain, Sparkles } from 'lucide-react';
+import { Loader2, Upload, Image as ImageIcon, ChevronDown, ChevronRight, Brain, Sparkles, Tag } from 'lucide-react';
 import SeatmapUploader from '@/components/SeatmapUploader';
+
+// Event type options (just tags for now)
+const EVENT_TYPES = [
+  { value: 'hockey', label: 'Hockey', icon: '🏒' },
+  { value: 'basketball', label: 'Basketball', icon: '🏀' },
+  { value: 'concert', label: 'Concert', icon: '🎤' },
+  { value: 'football', label: 'Football', icon: '🏈' },
+];
 
 // Extraction model options
 const EXTRACTION_MODELS = [
@@ -43,9 +51,11 @@ interface UploadExtractSectionProps {
   seatmapUrl: string | null;
   referenceUrl: string | null;
   sectionsCount: number;
+  eventType: string;
   onSeatmapUpload: (url: string) => void;
   onReferenceUpload: (url: string) => void;
   onExtractionComplete: () => void;
+  onEventTypeChange: (eventType: string) => void;
 }
 
 export function UploadExtractSection({
@@ -54,9 +64,11 @@ export function UploadExtractSection({
   seatmapUrl,
   referenceUrl,
   sectionsCount,
+  eventType,
   onSeatmapUpload,
   onReferenceUpload,
   onExtractionComplete,
+  onEventTypeChange,
 }: UploadExtractSectionProps) {
   const [extractionId, setExtractionId] = useState<string | null>(null);
   const [showReview, setShowReview] = useState(false);
@@ -131,6 +143,7 @@ export function UploadExtractSection({
 
   // If we already have sections and not in review mode, show success state
   if (sectionsCount > 0 && !showReview) {
+    const currentEventType = EVENT_TYPES.find(t => t.value === eventType);
     return (
       <div className="space-y-4">
         <div className="flex items-center gap-3 p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
@@ -142,7 +155,7 @@ export function UploadExtractSection({
               {sectionsCount} sections extracted
             </div>
             <div className="text-sm text-green-600 dark:text-green-400">
-              Ready to select sections and generate views
+              Ready to build 3D model and generate views
             </div>
           </div>
           <button
@@ -154,18 +167,37 @@ export function UploadExtractSection({
           </button>
         </div>
 
+        {/* Event Type Tag and Images */}
+        <div className="flex items-center gap-4">
+          {/* Event Type */}
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-purple-100 dark:bg-purple-900/30 rounded-full">
+            <span>{currentEventType?.icon || '🏟️'}</span>
+            <span className="text-sm font-medium text-purple-700 dark:text-purple-300">
+              {currentEventType?.label || 'Venue'}
+            </span>
+          </div>
+
+          {/* Change Event Type */}
+          <div className="flex gap-1">
+            {EVENT_TYPES.filter(t => t.value !== eventType).map((type) => (
+              <button
+                key={type.value}
+                onClick={() => onEventTypeChange(type.value)}
+                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 rounded"
+                title={`Change to ${type.label}`}
+              >
+                <span className="text-sm">{type.icon}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Show uploaded images */}
         <div className="flex gap-4">
           {seatmapUrl && (
             <div className="flex-1">
               <div className="text-xs text-gray-500 mb-1">Seatmap</div>
               <img src={seatmapUrl} alt="Seatmap" className="w-full h-32 object-cover rounded-lg border" />
-            </div>
-          )}
-          {referenceUrl && (
-            <div className="flex-1">
-              <div className="text-xs text-gray-500 mb-1">Reference</div>
-              <img src={referenceUrl} alt="Reference" className="w-full h-32 object-cover rounded-lg border" />
             </div>
           )}
         </div>
@@ -387,6 +419,33 @@ export function UploadExtractSection({
           onUploadComplete={onSeatmapUpload}
           existingUrl={seatmapUrl || undefined}
         />
+      </div>
+
+      {/* Event Type Tag */}
+      <div>
+        <div className="flex items-center gap-2 mb-2">
+          <Tag className="w-4 h-4 text-gray-500" />
+          <span className="font-medium text-gray-900 dark:text-white">Event Type</span>
+        </div>
+        <p className="text-sm text-gray-500 mb-3">
+          Tag what kind of events this venue hosts. This helps organize your venues.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {EVENT_TYPES.map((type) => (
+            <button
+              key={type.value}
+              onClick={() => onEventTypeChange(type.value)}
+              className={`px-4 py-2 rounded-lg border-2 flex items-center gap-2 transition-all ${
+                eventType === type.value
+                  ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300'
+                  : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 text-gray-700 dark:text-gray-300'
+              }`}
+            >
+              <span>{type.icon}</span>
+              <span className="font-medium">{type.label}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Extraction Model Selector */}

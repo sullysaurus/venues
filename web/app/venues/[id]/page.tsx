@@ -20,6 +20,7 @@ export default function VenueDetailPage() {
   const [referenceUrl, setReferenceUrl] = useState<string | null>(null);
   const [workflowId, setWorkflowId] = useState<string | null>(null);
   const [pipelineProgress, setPipelineProgress] = useState<PipelineProgress | null>(null);
+  const [eventType, setEventType] = useState<string>('hockey'); // Just a tag for now
 
   // Fetch venue data
   const { data: venue, isLoading: venueLoading } = useQuery({
@@ -188,9 +189,11 @@ export default function VenueDetailPage() {
             seatmapUrl={seatmapUrl}
             referenceUrl={referenceUrl}
             sectionsCount={sectionsCount}
+            eventType={eventType}
             onSeatmapUpload={handleSeatmapUpload}
             onReferenceUpload={handleReferenceUpload}
             onExtractionComplete={handleExtractionComplete}
+            onEventTypeChange={setEventType}
           />
         </CollapsibleSection>
 
