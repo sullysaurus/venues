@@ -22,11 +22,13 @@ const EVENT_TYPES = [
 ];
 
 // AI Models for image generation
+// NOTE: Only 'flux' and 'sdxl' actually use depth maps for structural conditioning
 const AI_MODELS = [
-  { value: 'flux-2', label: 'Flux 2.0', description: 'Latest model, best results', recommended: true },
-  { value: 'flux', label: 'Flux Depth Pro', description: 'Depth-conditioned generation' },
-  { value: 'flux-schnell', label: 'Flux Schnell', description: 'Fast generation' },
-  { value: 'flux-dev', label: 'Flux Dev', description: 'Higher quality, slower' },
+  { value: 'flux', label: 'Flux Depth Pro', description: 'Uses depth maps for accurate views', recommended: true },
+  { value: 'sdxl', label: 'SDXL ControlNet', description: 'Depth-conditioned, high quality' },
+  { value: 'flux-2', label: 'Flux 1.1 Pro', description: 'No depth - prompt only (not recommended)' },
+  { value: 'flux-schnell', label: 'Flux Schnell', description: 'Fast, no depth conditioning' },
+  { value: 'flux-dev', label: 'Flux Dev', description: 'No depth conditioning' },
 ];
 
 // Prompt templates for different venue types
@@ -133,7 +135,7 @@ export default function VenueDetailPage() {
   const [showSectionSelector, setShowSectionSelector] = useState(false);
 
   // AI generation state
-  const [model, setModel] = useState('flux-2');
+  const [model, setModel] = useState('flux');
   const [prompt, setPrompt] = useState('A photorealistic view from a stadium seat showing the field/stage, crowd, and venue atmosphere');
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [useIpAdapter, setUseIpAdapter] = useState(false);
