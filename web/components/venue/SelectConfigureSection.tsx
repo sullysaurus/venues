@@ -94,6 +94,7 @@ export function SelectConfigureSection({
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [depthMaps, setDepthMaps] = useState<Array<{id: string; url: string}>>([]);
   const [expandedImage, setExpandedImage] = useState<string | null>(null);
+  const [showModelPreview, setShowModelPreview] = useState(false);
   const [showDepthMaps, setShowDepthMaps] = useState(false);
   const [selectedTier, setSelectedTier] = useState<string | null>(null);
   // Track which step triggered the current workflow (bridges gap between mutation and first poll)
@@ -139,6 +140,10 @@ export function SelectConfigureSection({
   const sectionCount = Object.keys(sections).length;
   const selectedCount = selectedSections.size;
   const imageCount = selectedCount * 3; // 3 seats per section (Front, Middle, Back)
+
+  // For Step 3, use actual depth map count if available (can only generate images for existing depth maps)
+  const availableDepthMaps = depthMaps.length || existingAssets?.depth_map_count || 0;
+  const generatableImageCount = availableDepthMaps > 0 ? availableDepthMaps : imageCount;
 
   // Group sections by tier
   const sectionsByTier = sectionList.reduce((acc, section) => {
@@ -619,7 +624,7 @@ export function SelectConfigureSection({
             const isAvailable = (
               (step.id === 'model' && !isPipelineRunning && !isMutationPending) ||
               (step.id === 'depths' && completedStep === 'model' && !isPipelineRunning && !isMutationPending) ||
-              (step.id === 'images' && completedStep === 'depths' && !isPipelineRunning && !isMutationPending)
+              (step.id === 'images' && completedStep === 'depths' && availableDepthMaps > 0 && !isPipelineRunning && !isMutationPending)
             );
             const isDisabled = !isAvailable && !isCompleted && !isCurrentlyRunning;
 
@@ -692,7 +697,7 @@ export function SelectConfigureSection({
                   ) : (
                     <button
                       onClick={handleStepClick}
-                      disabled={isDisabled || selectedCount === 0}
+                      disabled={isDisabled || (step.id !== 'images' && selectedCount === 0) || (step.id === 'images' && availableDepthMaps === 0)}
                       className={`px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors ${
                         isAvailable
                           ? 'bg-purple-600 text-white hover:bg-purple-700'
@@ -749,12 +754,12 @@ export function SelectConfigureSection({
                         )}
                         {step.id === 'images' && (
                           <span className="text-purple-600 dark:text-purple-400">
-                            {progress?.images_generated || 0} of {imageCount} images
+                            {progress?.images_generated || 0} of {generatableImageCount} images
                           </span>
                         )}
                         <span className="text-gray-400">
                           {step.id === 'depths' && `${Math.round((progress?.depth_maps_rendered || 0) / Math.max(imageCount, 1) * 100)}%`}
-                          {step.id === 'images' && `${Math.round((progress?.images_generated || 0) / Math.max(imageCount, 1) * 100)}%`}
+                          {step.id === 'images' && `${Math.round((progress?.images_generated || 0) / Math.max(generatableImageCount, 1) * 100)}%`}
                         </span>
                       </>
                     ) : isCompleted ? (
@@ -767,7 +772,11 @@ export function SelectConfigureSection({
                         <span className="text-gray-400">
                           {step.id === 'model' && 'Creates 3D arena geometry'}
                           {step.id === 'depths' && `${imageCount} depth maps to render`}
-                          {step.id === 'images' && `${imageCount} images to generate`}
+                          {step.id === 'images' && (
+                            availableDepthMaps > 0
+                              ? `${availableDepthMaps} images to generate (from depth maps)`
+                              : `${imageCount} images to generate`
+                          )}
                         </span>
                         <span className="text-gray-400">0%</span>
                       </>
@@ -778,29 +787,45 @@ export function SelectConfigureSection({
                 {/* Step Results Preview */}
                 {step.id === 'model' && isCompleted && (
                   <div className="p-4 pt-0">
-                    {previewError ? (
-                      <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg text-sm text-amber-700 dark:text-amber-300">
-                        Preview not available: {previewError}
-                      </div>
-                    ) : modelPreviewUrl ? (
-                      <div className="relative rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 bg-gray-900">
-                        <img
-                          src={modelPreviewUrl}
-                          alt="3D Model Preview"
-                          className="w-full max-h-64 object-contain"
-                          onLoad={() => console.log('[Preview] Image loaded successfully')}
-                          onError={(e) => {
-                            console.error('[Preview] Failed to load:', modelPreviewUrl);
-                            setPreviewError('Image failed to load');
-                          }}
-                        />
-                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-3">
-                          <span className="text-white text-sm font-medium">3D Arena Model Preview</span>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg text-sm text-gray-500">
-                        Loading preview...
+                    <button
+                      onClick={() => setShowModelPreview(!showModelPreview)}
+                      className="w-full text-left flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+                    >
+                      <span className="font-medium text-gray-700 dark:text-gray-300">
+                        3D Arena Model Preview
+                      </span>
+                      {showModelPreview ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                    </button>
+                    {showModelPreview && (
+                      <div className="mt-4">
+                        {previewError ? (
+                          <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg text-sm text-amber-700 dark:text-amber-300">
+                            Preview not available: {previewError}
+                          </div>
+                        ) : modelPreviewUrl ? (
+                          <div
+                            className="relative rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 bg-gray-900 cursor-pointer"
+                            onClick={() => setExpandedImage(modelPreviewUrl)}
+                          >
+                            <img
+                              src={modelPreviewUrl}
+                              alt="3D Model Preview"
+                              className="w-full max-h-64 object-contain"
+                              onLoad={() => console.log('[Preview] Image loaded successfully')}
+                              onError={(e) => {
+                                console.error('[Preview] Failed to load:', modelPreviewUrl);
+                                setPreviewError('Image failed to load');
+                              }}
+                            />
+                            <div className="absolute top-2 right-2">
+                              <ZoomIn className="w-4 h-4 text-white/80" />
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg text-sm text-gray-500">
+                            Loading preview...
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -842,6 +867,25 @@ export function SelectConfigureSection({
                         )}
                       </div>
                     )}
+                  </div>
+                )}
+
+                {/* Info: Show what images will be generated from depth maps */}
+                {step.id === 'images' && completedStep === 'depths' && availableDepthMaps === 0 && !isCompleted && (
+                  <div className="px-4 pb-4">
+                    <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                      <div className="flex items-start gap-2">
+                        <AlertCircle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+                        <div className="text-sm">
+                          <p className="font-medium text-amber-700 dark:text-amber-300">
+                            No depth maps found
+                          </p>
+                          <p className="text-amber-600 dark:text-amber-400 mt-1">
+                            Go back to Step 2 to render depth maps first.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
