@@ -23,7 +23,8 @@ const EVENT_TYPES = [
 
 // AI Models for image generation
 const AI_MODELS = [
-  { value: 'flux', label: 'Flux Depth Pro', description: 'Best for venues', recommended: true },
+  { value: 'flux-2', label: 'Flux 2.0', description: 'Latest model, best results', recommended: true },
+  { value: 'flux', label: 'Flux Depth Pro', description: 'Depth-conditioned generation' },
   { value: 'flux-schnell', label: 'Flux Schnell', description: 'Fast generation' },
   { value: 'flux-dev', label: 'Flux Dev', description: 'Higher quality, slower' },
 ];
@@ -101,7 +102,7 @@ export default function VenueDetailPage() {
   const [showSectionSelector, setShowSectionSelector] = useState(false);
 
   // AI generation state
-  const [model, setModel] = useState('flux');
+  const [model, setModel] = useState('flux-2');
   const [prompt, setPrompt] = useState('A photorealistic view from a stadium seat showing the field/stage, crowd, and venue atmosphere');
   const [useIpAdapter, setUseIpAdapter] = useState(false);
   const [ipAdapterScale, setIpAdapterScale] = useState(0.6);
