@@ -88,35 +88,44 @@ TIER_DEFAULTS = {
 
 EXTRACTION_PROMPT = """You are analyzing a venue seatmap image. Your task is to extract ALL visible sections.
 
-CRITICAL: Most venue seatmaps have 20-40+ sections. You MUST identify EVERY section visible in the image.
-Look carefully for section numbers/labels around the entire venue - they are usually printed on each section.
+CRITICAL REQUIREMENTS:
+- Small arenas have 30-50 sections
+- Large arenas have 50-100 sections
+- STADIUMS (baseball, football) have 150-300+ sections across multiple levels
+- You MUST identify EVERY numbered section visible in the image
+- Do NOT stop early - keep listing sections until you've covered the entire venue
+
+Section numbering patterns to look for:
+- Main/Field Level: Often 1-59 or 100-159
+- Club/Terrace Level: Often 200-259
+- Upper/Grandstand Level: Often 300-359
+- Bleachers: Often 400s or lettered sections
 
 For EACH section you find, extract:
-- section_id: The label shown on the map (e.g., "101", "102", "A", "B", "Floor 1")
-- tier: "floor" (on the playing surface), "lower" (closest bowl), "mid" (middle level), "upper" (top level), or "club" (premium areas)
-- angle: Position around the venue in degrees (0 = top/12 o'clock, 90 = right/3 o'clock, 180 = bottom/6 o'clock, 270 = left/9 o'clock)
-- estimated_rows: Number of rows in this section (typically 10-30)
-- shape: "curved" for bowl seating, "straight" for theater-style
+- section_id: The exact label shown on the map (e.g., "101", "234", "A", "Floor 1")
+- tier: "floor" (field level), "lower" (100s level), "mid" (200s level), "upper" (300s level), or "club"
+- angle: Position in degrees (0 = centerfield/top, 90 = right field/1st base, 180 = home plate/bottom, 270 = left field/3rd base)
+- estimated_rows: Number of rows (typically 10-40)
+- shape: "curved" or "straight"
 
-Walk around the entire seatmap clockwise starting from the top:
-1. Start at 12 o'clock (angle 0) and note all sections there
-2. Move to 3 o'clock (angle 90) and note all sections
-3. Continue to 6 o'clock (angle 180)
-4. Then 9 o'clock (angle 270)
-5. Don't forget floor/field level sections in the center
+Systematic approach - go level by level:
+1. Field/Floor level sections (if any)
+2. Lower/Main level (100s) - all sections clockwise
+3. Club/Terrace level (200s) - all sections clockwise
+4. Upper/Grandstand level (300s) - all sections clockwise
+5. Bleachers and special sections
 
 Return ONLY valid JSON:
 {
-  "venue_type": "arena",
-  "estimated_capacity": 18000,
+  "venue_type": "stadium",
+  "estimated_capacity": 45000,
   "sections": [
-    {"section_id": "101", "tier": "lower", "angle": 0, "estimated_rows": 20, "shape": "curved", "position_description": "lower bowl, north side", "confidence": 0.9},
-    {"section_id": "102", "tier": "lower", "angle": 15, "estimated_rows": 20, "shape": "curved", "position_description": "lower bowl, north side", "confidence": 0.9},
-    {"section_id": "103", "tier": "lower", "angle": 30, "estimated_rows": 20, "shape": "curved", "position_description": "lower bowl, northeast", "confidence": 0.9}
+    {"section_id": "1", "tier": "lower", "angle": 180, "estimated_rows": 25, "shape": "curved", "position_description": "behind home plate", "confidence": 0.9},
+    {"section_id": "101", "tier": "lower", "angle": 160, "estimated_rows": 30, "shape": "curved", "position_description": "field level, 3rd base side", "confidence": 0.9}
   ]
 }
 
-Remember: Include ALL sections. A typical arena has 30+ sections. Do not stop after finding just a few."""
+IMPORTANT: Do NOT truncate your response. List every single section. Large stadiums have 200+ sections - list them ALL."""
 
 
 def map_2d_to_3d(extracted_section: dict) -> dict:
@@ -212,11 +221,12 @@ def extract_sections_from_seatmap(seatmap_url: str) -> dict:
                 ]
             }
         ],
-        max_tokens=4000
+        max_tokens=16000  # Increased for large stadiums with 200+ sections
     )
 
     response_text = response.choices[0].message.content
-    print(f"GPT-4 Vision response: {response_text[:500]}...")
+    print(f"GPT-4 Vision response length: {len(response_text)} chars")
+    print(f"GPT-4 Vision response preview: {response_text[:500]}...")
 
     # Parse JSON from response (handle markdown code blocks)
     json_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', response_text)
