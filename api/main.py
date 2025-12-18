@@ -12,7 +12,7 @@ from pathlib import Path
 import logging
 
 from api.config import settings
-from api.routes import venues, pipelines, images, event_types, seatmaps
+from api.routes import venues, pipelines, images, event_types, seatmaps, tier_references
 
 # Configure logging
 logging.basicConfig(
@@ -62,6 +62,7 @@ app.include_router(pipelines.router, prefix="/pipelines", tags=["pipelines"])
 app.include_router(images.router, prefix="/images", tags=["images"])
 app.include_router(event_types.router, prefix="/venues", tags=["event-types"])
 app.include_router(seatmaps.router, prefix="/venues", tags=["seatmaps"])
+app.include_router(tier_references.router, prefix="/venues", tags=["tier-references"])
 
 # Serve venue static files (seatmaps, generated images)
 venues_path = Path(__file__).parent.parent / "venues"

@@ -9,7 +9,7 @@ import {
   ChevronDown, ChevronUp, Check, Loader2, Play, X, ZoomIn, Settings, Tag,
   ChevronRight, AlertCircle
 } from 'lucide-react';
-import { venuesApi, imagesApi, seatmapsApi, pipelinesApi, PipelineProgress, Section, SeatImage, VenueAssets } from '@/lib/api';
+import { venuesApi, imagesApi, seatmapsApi, pipelinesApi, tierReferencesApi, PipelineProgress, Section, SeatImage, VenueAssets, TierReference } from '@/lib/api';
 import { CollapsibleSection, SectionStatus } from '@/components/CollapsibleSection';
 import SeatmapUploader from '@/components/SeatmapUploader';
 
@@ -28,6 +28,37 @@ const AI_MODELS = [
   { value: 'flux-schnell', label: 'Flux Schnell', description: 'Fast generation' },
   { value: 'flux-dev', label: 'Flux Dev', description: 'Higher quality, slower' },
 ];
+
+// Prompt templates for different venue types
+const PROMPT_TEMPLATES = [
+  {
+    name: 'hockey',
+    label: 'Hockey Arena',
+    icon: '🏒',
+    prompt: 'Photorealistic view from stadium seat, NHL hockey arena, ice rink with boards, arena lighting, empty arena, professional sports photography'
+  },
+  {
+    name: 'basketball',
+    label: 'Basketball Court',
+    icon: '🏀',
+    prompt: 'Photorealistic view from arena seat, NBA basketball court, hardwood floor, basketball hoops, arena scoreboard, empty arena, professional photography'
+  },
+  {
+    name: 'concert',
+    label: 'Concert Venue',
+    icon: '🎤',
+    prompt: 'Photorealistic view from arena seat, concert stage, dramatic stage lighting, LED screens, empty venue, professional photography'
+  },
+  {
+    name: 'football',
+    label: 'Football Stadium',
+    icon: '🏈',
+    prompt: 'Photorealistic view from stadium seat, football field, yard lines, goalposts, empty stadium, professional sports photography'
+  },
+];
+
+// Valid tiers for tier reference images
+const TIER_OPTIONS = ['floor', 'lower', 'mid', 'upper', 'club'] as const;
 
 interface ExtractedSection {
   section_id: string;
@@ -104,9 +135,15 @@ export default function VenueDetailPage() {
   // AI generation state
   const [model, setModel] = useState('flux-2');
   const [prompt, setPrompt] = useState('A photorealistic view from a stadium seat showing the field/stage, crowd, and venue atmosphere');
+  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [useIpAdapter, setUseIpAdapter] = useState(false);
   const [ipAdapterScale, setIpAdapterScale] = useState(0.6);
   const [showAISettings, setShowAISettings] = useState(false);
+
+  // Tier reference state
+  const [tierReferences, setTierReferences] = useState<TierReference[]>([]);
+  const [showTierUploader, setShowTierUploader] = useState(false);
+  const [uploadingTier, setUploadingTier] = useState<string | null>(null);
 
   // Results state
   const [selectedTier, setSelectedTier] = useState<string | null>(null);
@@ -127,6 +164,11 @@ export default function VenueDetailPage() {
   const { data: imagesData } = useQuery({
     queryKey: ['images', venueId],
     queryFn: () => imagesApi.list(venueId).then((res) => res.data),
+  });
+
+  const { data: tierRefsData, refetch: refetchTierRefs } = useQuery({
+    queryKey: ['tier-references', venueId],
+    queryFn: () => tierReferencesApi.list(venueId).then((res) => res.data),
   });
 
   const { data: extractionStatus } = useQuery({
@@ -196,6 +238,17 @@ export default function VenueDetailPage() {
       setShowExtractedSections(true);
     }
   }, [extractionStatus?.status]);
+
+  // Update tier references when data changes
+  useEffect(() => {
+    if (tierRefsData?.tier_references) {
+      setTierReferences(tierRefsData.tier_references);
+      // Auto-enable IP-Adapter if we have any tier references
+      if (tierRefsData.tier_references.length > 0) {
+        setUseIpAdapter(true);
+      }
+    }
+  }, [tierRefsData]);
 
   // Poll for pipeline progress
   useEffect(() => {
@@ -345,6 +398,36 @@ export default function VenueDetailPage() {
     if (allSelected) tierSectionIds.forEach((id) => newSelected.delete(id));
     else tierSectionIds.forEach((id) => newSelected.add(id));
     setSectionsForDepths(newSelected);
+  };
+
+  const handleSelectPromptTemplate = (templateName: string) => {
+    const template = PROMPT_TEMPLATES.find(t => t.name === templateName);
+    if (template) {
+      setPrompt(template.prompt);
+      setSelectedTemplate(templateName);
+    }
+  };
+
+  const handleTierReferenceUpload = async (tier: string, file: File) => {
+    setUploadingTier(tier);
+    try {
+      await tierReferencesApi.upload(venueId, tier, file, 0.7);
+      await refetchTierRefs();
+      setUseIpAdapter(true);
+    } catch (error) {
+      console.error('Failed to upload tier reference:', error);
+    } finally {
+      setUploadingTier(null);
+    }
+  };
+
+  const handleTierReferenceDelete = async (tier: string) => {
+    try {
+      await tierReferencesApi.delete(venueId, tier);
+      await refetchTierRefs();
+    } catch (error) {
+      console.error('Failed to delete tier reference:', error);
+    }
   };
 
   // ============ STATUS HELPERS ============
@@ -871,38 +954,152 @@ export default function VenueDetailPage() {
                   </select>
                 </div>
 
-                {/* Prompt */}
+                {/* Prompt Templates */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Prompt Template</label>
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {PROMPT_TEMPLATES.map((template) => (
+                      <button
+                        key={template.name}
+                        onClick={() => handleSelectPromptTemplate(template.name)}
+                        className={`px-3 py-1.5 rounded-lg border-2 flex items-center gap-2 text-sm ${
+                          selectedTemplate === template.name
+                            ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300'
+                            : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 text-gray-700 dark:text-gray-300'
+                        }`}
+                      >
+                        <span>{template.icon}</span>
+                        <span>{template.label}</span>
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => setSelectedTemplate(null)}
+                      className={`px-3 py-1.5 rounded-lg border-2 text-sm ${
+                        selectedTemplate === null
+                          ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300'
+                          : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 text-gray-700 dark:text-gray-300'
+                      }`}
+                    >
+                      Custom
+                    </button>
+                  </div>
+                </div>
+
+                {/* Scene Prompt */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Scene Prompt</label>
                   <textarea
                     value={prompt}
-                    onChange={(e) => setPrompt(e.target.value)}
+                    onChange={(e) => {
+                      setPrompt(e.target.value);
+                      setSelectedTemplate(null);
+                    }}
                     rows={3}
                     placeholder="Describe the venue atmosphere..."
                     className="w-full p-3 border rounded-lg bg-white dark:bg-gray-800 resize-none"
                   />
                 </div>
 
-                {/* Reference Image Upload */}
+                {/* Tier Reference Images */}
                 <div className="pt-3 border-t">
-                  <div className="flex items-center gap-2 mb-2">
-                    <ImageIcon className="w-4 h-4 text-gray-500" />
-                    <span className="font-medium text-gray-700 dark:text-gray-300">Reference Image (Optional)</span>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <ImageIcon className="w-4 h-4 text-gray-500" />
+                      <span className="font-medium text-gray-700 dark:text-gray-300">Tier Reference Images</span>
+                    </div>
+                    <button
+                      onClick={() => setShowTierUploader(!showTierUploader)}
+                      className="text-sm text-purple-600 hover:underline"
+                    >
+                      {showTierUploader ? 'Hide' : 'Show'} Uploader
+                    </button>
                   </div>
-                  <p className="text-sm text-gray-500 mb-3">Upload a reference photo for style transfer using IP-Adapter.</p>
-                  <SeatmapUploader
-                    venueId={venueId}
-                    imageType="reference"
-                    onUploadComplete={(url) => {
-                      setReferenceUrl(url);
-                      setUseIpAdapter(true);
-                    }}
-                    existingUrl={referenceUrl || undefined}
-                  />
-                  {referenceUrl && (
+                  <p className="text-sm text-gray-500 mb-3">
+                    Upload reference photos for each tier level. Images in each tier will match the style of its reference photo.
+                  </p>
+
+                  {tierReferences.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {tierReferences.map((ref) => (
+                        <div key={ref.tier} className={`px-2 py-1 text-xs rounded-full ${getTierColor(ref.tier)}`}>
+                          {ref.tier}: uploaded
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {showTierUploader && (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-3">
+                      {TIER_OPTIONS.map((tier) => {
+                        const existingRef = tierReferences.find(r => r.tier === tier);
+                        const isUploading = uploadingTier === tier;
+
+                        return (
+                          <div
+                            key={tier}
+                            className={`relative rounded-lg border-2 overflow-hidden ${getTierBgColor(tier)} ${
+                              existingRef ? 'border-green-400' : 'border-dashed border-gray-300'
+                            }`}
+                          >
+                            <div className="p-2 text-center">
+                              <div className={`text-xs font-medium capitalize mb-1 ${getTierColor(tier).split(' ')[2]}`}>
+                                {tier}
+                              </div>
+
+                              {existingRef ? (
+                                <div className="relative group">
+                                  <img
+                                    src={existingRef.reference_image_url}
+                                    alt={`${tier} reference`}
+                                    className="w-full h-16 object-cover rounded"
+                                  />
+                                  <button
+                                    onClick={() => handleTierReferenceDelete(tier)}
+                                    className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <label className="block cursor-pointer">
+                                  <div className="w-full h-16 flex items-center justify-center border border-dashed border-gray-300 rounded hover:border-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors">
+                                    {isUploading ? (
+                                      <Loader2 className="w-5 h-5 animate-spin text-purple-500" />
+                                    ) : (
+                                      <Upload className="w-5 h-5 text-gray-400" />
+                                    )}
+                                  </div>
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    className="hidden"
+                                    onChange={(e) => {
+                                      const file = e.target.files?.[0];
+                                      if (file) handleTierReferenceUpload(tier, file);
+                                    }}
+                                    disabled={isUploading}
+                                  />
+                                </label>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* IP-Adapter Toggle */}
+                  {(tierReferences.length > 0 || referenceUrl) && (
                     <div className="mt-3 p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
                       <div className="flex items-center justify-between mb-2">
-                        <label className="text-sm font-medium text-purple-700 dark:text-purple-300">Use IP-Adapter</label>
+                        <label className="text-sm font-medium text-purple-700 dark:text-purple-300">
+                          Use IP-Adapter Style Transfer
+                          {tierReferences.length > 0 && (
+                            <span className="ml-2 text-xs text-purple-500">
+                              ({tierReferences.length} tier{tierReferences.length > 1 ? 's' : ''} configured)
+                            </span>
+                          )}
+                        </label>
                         <button
                           onClick={() => setUseIpAdapter(!useIpAdapter)}
                           className={`w-12 h-6 rounded-full transition-colors ${useIpAdapter ? 'bg-purple-600' : 'bg-gray-300'}`}
@@ -912,13 +1109,35 @@ export default function VenueDetailPage() {
                       </div>
                       {useIpAdapter && (
                         <div>
-                          <label className="block text-xs text-purple-600 mb-1">Style Strength: {Math.round(ipAdapterScale * 100)}%</label>
+                          <label className="block text-xs text-purple-600 mb-1">Default Style Strength: {Math.round(ipAdapterScale * 100)}%</label>
                           <input type="range" min="0" max="1" step="0.1" value={ipAdapterScale} onChange={(e) => setIpAdapterScale(parseFloat(e.target.value))} className="w-full" />
                         </div>
                       )}
                     </div>
                   )}
                 </div>
+
+                {/* Legacy Reference Image Upload (fallback) */}
+                {tierReferences.length === 0 && (
+                  <div className="pt-3 border-t">
+                    <div className="flex items-center gap-2 mb-2">
+                      <ImageIcon className="w-4 h-4 text-gray-500" />
+                      <span className="font-medium text-gray-700 dark:text-gray-300">Single Reference Image (Legacy)</span>
+                    </div>
+                    <p className="text-sm text-gray-500 mb-3">
+                      Or upload a single reference photo for all images. Use tier references above for better results.
+                    </p>
+                    <SeatmapUploader
+                      venueId={venueId}
+                      imageType="reference"
+                      onUploadComplete={(url) => {
+                        setReferenceUrl(url);
+                        setUseIpAdapter(true);
+                      }}
+                      existingUrl={referenceUrl || undefined}
+                    />
+                  </div>
+                )}
               </div>
             )}
 

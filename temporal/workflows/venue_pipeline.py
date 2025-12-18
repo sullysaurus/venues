@@ -106,6 +106,7 @@ class VenuePipelineWorkflow:
         all_depth_maps: Dict[str, str] = {}
         depth_paths: Dict[str, str] = {}
         image_paths: Dict[str, str] = {}
+        seat_tier_map: Dict[str, str] = {}  # seat_id -> tier for tier-based reference selection
 
         try:
             # ===== STAGE 1: GENERATE SEATS =====
@@ -133,6 +134,13 @@ class VenuePipelineWorkflow:
             cost_breakdown["seats"] = COST_ESTIMATES["seats"]
             self._progress.actual_cost += COST_ESTIMATES["seats"]
             self._progress.seats_generated = len(all_seats)
+
+            # Build seat_id -> tier mapping for tier-based reference selection
+            for seat in all_seats:
+                seat_id = seat.get("id")
+                tier = seat.get("tier", "lower")
+                if seat_id:
+                    seat_tier_map[seat_id] = tier
 
             # Save seats to storage
             await workflow.execute_activity(
@@ -320,7 +328,7 @@ class VenuePipelineWorkflow:
 
             # Generate images in parallel batches
             image_paths = await self._generate_images_parallel(
-                input, all_depth_maps, existing_images, cost_breakdown
+                input, all_depth_maps, existing_images, cost_breakdown, seat_tier_map
             )
 
             # ===== COMPLETE =====
@@ -363,6 +371,7 @@ class VenuePipelineWorkflow:
         depth_maps: Dict[str, str],
         existing_images: Dict[str, str],
         cost_breakdown: Dict[str, float],
+        seat_tier_map: Optional[Dict[str, str]] = None,
     ) -> Dict[str, str]:
         """Generate AI images in parallel with concurrency control."""
 
@@ -387,6 +396,11 @@ class VenuePipelineWorkflow:
 
         workflow.logger.info(f"Generating {len(seat_ids)} images ({len(existing_images)} already exist)")
 
+        # Log tier reference info if available
+        if input.tier_reference_images:
+            tiers_with_refs = list(input.tier_reference_images.keys())
+            workflow.logger.info(f"Using tier-specific reference images for tiers: {tiers_with_refs}")
+
         batch_size = input.parallel_image_batch_size
 
         for batch_start in range(0, len(seat_ids), batch_size):
@@ -404,6 +418,19 @@ class VenuePipelineWorkflow:
             # Launch parallel activities for this batch
             tasks = []
             for seat_id in batch_ids:
+                # Select reference image and IP-adapter scale based on seat's tier
+                reference_b64 = input.reference_image_b64
+                ip_scale = input.ip_adapter_scale
+
+                # Check for tier-specific reference
+                if seat_tier_map and input.tier_reference_images:
+                    seat_tier = seat_tier_map.get(seat_id, "lower")
+                    if seat_tier in input.tier_reference_images:
+                        reference_b64 = input.tier_reference_images[seat_tier]
+                        # Use tier-specific IP-adapter scale if available
+                        if input.tier_ip_adapter_scales and seat_tier in input.tier_ip_adapter_scales:
+                            ip_scale = input.tier_ip_adapter_scales[seat_tier]
+
                 task = workflow.execute_activity(
                     generate_ai_image_activity,
                     args=[
@@ -412,8 +439,8 @@ class VenuePipelineWorkflow:
                         input.prompt,
                         input.model,
                         input.strength,
-                        input.reference_image_b64,
-                        input.ip_adapter_scale,
+                        reference_b64,
+                        ip_scale,
                     ],
                     start_to_close_timeout=timedelta(minutes=10),
                     retry_policy=AI_GENERATION_RETRY,

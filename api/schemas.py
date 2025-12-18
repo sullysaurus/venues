@@ -288,3 +288,28 @@ class SeatmapExtractionResponse(BaseModel):
 class SeatmapAdjustmentRequest(BaseModel):
     """Request to adjust extracted sections."""
     sections: Dict[str, ExtractedSection]  # section_id -> adjusted section
+
+
+# ============== Tier Reference Schemas ==============
+
+class TierReferenceCreate(BaseModel):
+    """Request to create/update a tier reference image."""
+    tier: str  # 'floor', 'lower', 'mid', 'upper', 'club'
+    ip_adapter_scale: float = Field(0.7, ge=0.0, le=1.0)
+
+
+class TierReferenceResponse(BaseModel):
+    """Tier reference image response."""
+    id: str
+    venue_id: str
+    tier: str
+    reference_image_url: str
+    ip_adapter_scale: float = 0.7
+    created_at: Optional[datetime] = None
+
+
+class TierReferenceListResponse(BaseModel):
+    """List of tier references for a venue."""
+    venue_id: str
+    tier_references: List[TierReferenceResponse]
+    total: int

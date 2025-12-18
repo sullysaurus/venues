@@ -38,6 +38,12 @@ class VenuePipelineInput:
     reference_image_b64: Optional[str] = None
     ip_adapter_scale: float = 0.6
 
+    # Tier-specific reference images (tier -> base64 encoded image)
+    # These override reference_image_b64 when a seat's tier matches
+    tier_reference_images: Optional[Dict[str, str]] = None
+    # Tier-specific IP-adapter scales (tier -> scale)
+    tier_ip_adapter_scales: Optional[Dict[str, float]] = None
+
     # Processing options
     parallel_image_batch_size: int = 5
     depth_batch_size: int = 10

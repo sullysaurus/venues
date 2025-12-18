@@ -234,3 +234,50 @@ export const seatmapsApi = {
       `/venues/${venueId}/seatmaps/extractions/${extractionId}/finalize`
     ),
 };
+
+// Tier Reference Types
+export interface TierReference {
+  id: string;
+  venue_id: string;
+  tier: string;  // 'floor', 'lower', 'mid', 'upper', 'club'
+  reference_image_url: string;
+  ip_adapter_scale: number;
+  created_at?: string;
+}
+
+// Tier References API
+export const tierReferencesApi = {
+  list: (venueId: string) =>
+    api.get<{ venue_id: string; tier_references: TierReference[]; total: number }>(
+      `/venues/${venueId}/tier-references`
+    ),
+
+  get: (venueId: string, tier: string) =>
+    api.get<TierReference>(`/venues/${venueId}/tier-references/${tier}`),
+
+  upload: async (venueId: string, tier: string, file: File, ipAdapterScale: number = 0.7) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('ip_adapter_scale', ipAdapterScale.toString());
+
+    return api.post<TierReference>(
+      `/venues/${venueId}/tier-references/${tier}`,
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } }
+    );
+  },
+
+  updateScale: (venueId: string, tier: string, ipAdapterScale: number) => {
+    const formData = new FormData();
+    formData.append('ip_adapter_scale', ipAdapterScale.toString());
+
+    return api.patch<{ status: string; tier: string; ip_adapter_scale: number }>(
+      `/venues/${venueId}/tier-references/${tier}`,
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } }
+    );
+  },
+
+  delete: (venueId: string, tier: string) =>
+    api.delete<{ status: string; tier: string }>(`/venues/${venueId}/tier-references/${tier}`),
+};

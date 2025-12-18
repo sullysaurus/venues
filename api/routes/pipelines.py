@@ -150,6 +150,36 @@ async def start_pipeline(request: PipelineRequest):
     # Fetch reference image from event type if using IP-Adapter and not provided
     reference_image_b64 = request.reference_image_b64
 
+    # Tier-specific reference images
+    tier_reference_images = {}
+    tier_ip_adapter_scales = {}
+
+    # Fetch tier references for this venue
+    try:
+        supabase = get_supabase()
+        tier_refs = supabase.table("tier_references").select("*").eq(
+            "venue_id", request.venue_id
+        ).execute()
+
+        if tier_refs.data:
+            logger.info(f"Found {len(tier_refs.data)} tier references for venue {request.venue_id}")
+            for ref in tier_refs.data:
+                tier = ref.get("tier")
+                ref_url = ref.get("reference_image_url")
+                scale = ref.get("ip_adapter_scale", 0.7)
+
+                if tier and ref_url:
+                    # Fetch the image and convert to base64
+                    ref_b64 = await fetch_reference_image(ref_url)
+                    if ref_b64:
+                        tier_reference_images[tier] = ref_b64
+                        tier_ip_adapter_scales[tier] = scale
+                        logger.info(f"Loaded tier reference for '{tier}' (scale={scale})")
+                    else:
+                        logger.warning(f"Failed to fetch tier reference image for '{tier}'")
+    except Exception as e:
+        logger.warning(f"Could not fetch tier references: {e}")
+
     # Build surface config from request surface_type
     surface_config = {
         "surface_type": request.surface_type.value,
@@ -193,6 +223,8 @@ async def start_pipeline(request: PipelineRequest):
         strength=request.strength,
         reference_image_b64=reference_image_b64,
         ip_adapter_scale=ip_adapter_scale,
+        tier_reference_images=tier_reference_images if tier_reference_images else None,
+        tier_ip_adapter_scales=tier_ip_adapter_scales if tier_ip_adapter_scales else None,
         stop_after_model=request.stop_after_model,
         stop_after_depths=request.stop_after_depths,
         skip_ai_generation=request.skip_ai_generation,
