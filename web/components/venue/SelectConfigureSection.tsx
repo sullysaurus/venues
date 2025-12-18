@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { pipelinesApi, PipelineProgress, Section, imagesApi, SeatImage } from '@/lib/api';
+import { pipelinesApi, PipelineProgress, Section, imagesApi, SeatImage, VenueAssets } from '@/lib/api';
 import {
   Play, Settings, Image as ImageIcon, Loader2, Box, Layers, Eye, Sparkles,
   Check, ChevronDown, ChevronUp, AlertCircle, ZoomIn, X
@@ -87,13 +87,9 @@ export function SelectConfigureSection({
   const [useIpAdapter, setUseIpAdapter] = useState(hasReferenceImage);
   const [ipAdapterScale, setIpAdapterScale] = useState(0.6);
   const [showAdvanced, setShowAdvanced] = useState(false);
-  // Initialize completedStep based on existing data
-  const getInitialCompletedStep = (): CompletedStep => {
-    if (images.length > 0) return 'images';
-    // Could also check for existing depth maps or model here
-    return 'none';
-  };
-  const [completedStep, setCompletedStep] = useState<CompletedStep>(getInitialCompletedStep);
+  // State for completed steps and existing assets
+  const [completedStep, setCompletedStep] = useState<CompletedStep>(images.length > 0 ? 'images' : 'none');
+  const [existingAssets, setExistingAssets] = useState<VenueAssets | null>(null);
   const [modelPreviewUrl, setModelPreviewUrl] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [depthMaps, setDepthMaps] = useState<Array<{id: string; url: string}>>([]);
@@ -102,6 +98,37 @@ export function SelectConfigureSection({
   const [selectedTier, setSelectedTier] = useState<string | null>(null);
   // Track which step triggered the current workflow (bridges gap between mutation and first poll)
   const [activeStep, setActiveStep] = useState<string | null>(null);
+
+  // Check for existing assets on mount (for resume capability)
+  useEffect(() => {
+    const checkExistingAssets = async () => {
+      try {
+        const response = await imagesApi.getAssets(venueId);
+        const assets = response.data;
+        setExistingAssets(assets);
+        console.log('[Assets] Existing assets:', assets);
+
+        // Set completedStep based on what exists (if not already set from images prop)
+        if (completedStep === 'none') {
+          if (assets.has_images && assets.image_count > 0) {
+            setCompletedStep('images');
+          } else if (assets.has_depth_maps && assets.depth_map_count > 0) {
+            setCompletedStep('depths');
+          } else if (assets.has_model) {
+            setCompletedStep('model');
+          }
+        }
+
+        // Load preview if model exists
+        if (assets.has_preview && assets.preview_url) {
+          setModelPreviewUrl(assets.preview_url);
+        }
+      } catch (e) {
+        console.error('[Assets] Failed to check existing assets:', e);
+      }
+    };
+    checkExistingAssets();
+  }, [venueId]);
 
   const sectionList = Object.values(sections);
   const sectionCount = Object.keys(sections).length;
@@ -238,6 +265,7 @@ export function SelectConfigureSection({
         model: useIpAdapter ? 'ip_adapter' : model,
         ip_adapter_scale: useIpAdapter ? ipAdapterScale : 0,
         stop_after_depths: true,  // Stop after depth maps
+        skip_model_build: existingAssets?.has_model ?? false,  // Use existing model if available
         surface_type: surfaceType,
       });
     },
@@ -269,6 +297,8 @@ export function SelectConfigureSection({
         model: useIpAdapter ? 'ip_adapter' : model,
         ip_adapter_scale: useIpAdapter ? ipAdapterScale : 0,
         skip_ai_generation: false,  // Run full pipeline
+        skip_model_build: existingAssets?.has_model ?? false,  // Use existing model if available
+        skip_depth_render: existingAssets?.has_depth_maps ?? false,  // Use existing depth maps if available
         surface_type: surfaceType,
       });
     },
@@ -747,11 +777,11 @@ export function SelectConfigureSection({
                         Preview not available: {previewError}
                       </div>
                     ) : modelPreviewUrl ? (
-                      <div className="relative rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+                      <div className="relative rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 bg-gray-900">
                         <img
                           src={modelPreviewUrl}
                           alt="3D Model Preview"
-                          className="w-full h-48 object-cover"
+                          className="w-full max-h-64 object-contain"
                           onLoad={() => console.log('[Preview] Image loaded successfully')}
                           onError={(e) => {
                             console.error('[Preview] Failed to load:', modelPreviewUrl);

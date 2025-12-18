@@ -196,6 +196,8 @@ async def start_pipeline(request: PipelineRequest):
         stop_after_model=request.stop_after_model,
         stop_after_depths=request.stop_after_depths,
         skip_ai_generation=request.skip_ai_generation,
+        skip_model_build=request.skip_model_build,
+        skip_depth_render=request.skip_depth_render,
     )
 
     try:

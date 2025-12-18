@@ -88,6 +88,64 @@ async def get_venue_model(venue_id: str):
     raise HTTPException(status_code=404, detail="Model not found")
 
 
+@router.get("/{venue_id}/assets")
+async def get_venue_assets(venue_id: str):
+    """Check what assets exist for a venue (for resume capability)."""
+    from api.db.client import get_supabase_client
+
+    result = {
+        "venue_id": venue_id,
+        "has_model": False,
+        "has_preview": False,
+        "has_depth_maps": False,
+        "has_images": False,
+        "depth_map_count": 0,
+        "image_count": 0,
+        "model_url": None,
+        "preview_url": None,
+    }
+
+    try:
+        client = get_supabase_client()
+        bucket = client.storage.from_("IMAGES")
+
+        # Check root folder for model and preview
+        try:
+            root_files = bucket.list(venue_id)
+            for f in root_files:
+                if f.get("name") == "venue_model.blend":
+                    result["has_model"] = True
+                    result["model_url"] = bucket.get_public_url(f"{venue_id}/venue_model.blend")
+                elif f.get("name") == "preview.png":
+                    result["has_preview"] = True
+                    result["preview_url"] = bucket.get_public_url(f"{venue_id}/preview.png")
+        except Exception:
+            pass
+
+        # Check depth_maps folder
+        try:
+            depth_files = bucket.list(f"{venue_id}/depth_maps")
+            depth_count = sum(1 for f in depth_files if f.get("id") and f.get("name", "").endswith(".png"))
+            result["depth_map_count"] = depth_count
+            result["has_depth_maps"] = depth_count > 0
+        except Exception:
+            pass
+
+        # Check final_images folder
+        try:
+            image_files = bucket.list(f"{venue_id}/final_images")
+            image_count = sum(1 for f in image_files if f.get("id") and f.get("name", "").endswith(".jpg"))
+            result["image_count"] = image_count
+            result["has_images"] = image_count > 0
+        except Exception:
+            pass
+
+    except Exception as e:
+        result["error"] = str(e)
+
+    return result
+
+
 @router.get("/{venue_id}/files")
 async def list_venue_files(venue_id: str):
     """Debug endpoint: List all files in Supabase Storage for a venue."""

@@ -35,6 +35,8 @@ with workflow.unsafe.imports_passed_through():
         save_depth_maps_activity,
         save_generated_images_activity,
         load_existing_images_activity,
+        load_existing_blend_activity,
+        load_existing_depth_maps_activity,
     )
 
 
@@ -144,33 +146,57 @@ class VenuePipelineWorkflow:
                 return self._make_cancelled_result(input, start_time, cost_breakdown)
 
             # ===== STAGE 2: BUILD 3D MODEL =====
-            self._update_progress(
-                PipelineStage.BUILDING_MODEL,
-                step=2,
-                message="Building 3D venue model with Blender..."
-            )
+            blend_file_b64 = None
 
-            model_result = await workflow.execute_activity(
-                build_venue_model_activity,
-                args=[input.config, sections],
-                start_to_close_timeout=timedelta(minutes=15),
-                retry_policy=BLENDER_RETRY,
-                # No heartbeat_timeout - Modal calls are blocking and can't heartbeat during execution
-            )
+            if input.skip_model_build:
+                # Try to load existing blend file from storage
+                self._update_progress(
+                    PipelineStage.BUILDING_MODEL,
+                    step=2,
+                    message="Loading existing 3D model..."
+                )
 
-            # Extract blend file for depth rendering
-            blend_file_b64 = model_result["blend_file"]
+                blend_file_b64 = await workflow.execute_activity(
+                    load_existing_blend_activity,
+                    args=[input.venue_id],
+                    start_to_close_timeout=timedelta(minutes=2),
+                    retry_policy=FAST_RETRY,
+                )
 
-            cost_breakdown["model_build"] = COST_ESTIMATES["blender_build"]
-            self._progress.actual_cost += COST_ESTIMATES["blender_build"]
+                if blend_file_b64:
+                    workflow.logger.info("Using existing blend file from storage")
+                else:
+                    workflow.logger.warning("No existing blend file found, building new one")
 
-            # Save blend file and preview
-            await workflow.execute_activity(
-                save_blend_file_activity,
-                args=[venue_dir, model_result],
-                start_to_close_timeout=timedelta(minutes=2),
-                retry_policy=FAST_RETRY,
-            )
+            if not blend_file_b64:
+                # Build new model
+                self._update_progress(
+                    PipelineStage.BUILDING_MODEL,
+                    step=2,
+                    message="Building 3D venue model with Blender..."
+                )
+
+                model_result = await workflow.execute_activity(
+                    build_venue_model_activity,
+                    args=[input.config, sections],
+                    start_to_close_timeout=timedelta(minutes=15),
+                    retry_policy=BLENDER_RETRY,
+                    # No heartbeat_timeout - Modal calls are blocking and can't heartbeat during execution
+                )
+
+                # Extract blend file for depth rendering
+                blend_file_b64 = model_result["blend_file"]
+
+                cost_breakdown["model_build"] = COST_ESTIMATES["blender_build"]
+                self._progress.actual_cost += COST_ESTIMATES["blender_build"]
+
+                # Save blend file and preview
+                await workflow.execute_activity(
+                    save_blend_file_activity,
+                    args=[venue_dir, model_result],
+                    start_to_close_timeout=timedelta(minutes=2),
+                    retry_policy=FAST_RETRY,
+                )
 
             if self._should_cancel:
                 return self._make_cancelled_result(input, start_time, cost_breakdown)
@@ -188,56 +214,79 @@ class VenuePipelineWorkflow:
                 )
 
             # ===== STAGE 3: RENDER DEPTH MAPS =====
-            self._update_progress(
-                PipelineStage.RENDERING_DEPTHS,
-                step=3,
-                message="Rendering depth maps..."
-            )
-
-            # Determine which seats to render
-            seats_to_render = anchor_seats
-            if input.custom_seats:
-                # Use custom seats instead
-                seats_to_render = [
-                    s for s in all_seats if s.get("id") in input.custom_seats
-                ]
-
-            # Batch depth map rendering
-            depth_batch_size = input.depth_batch_size
-
-            for batch_idx in range(0, len(seats_to_render), depth_batch_size):
-                if self._should_cancel:
-                    break
-
-                batch = seats_to_render[batch_idx:batch_idx + depth_batch_size]
-                batch_num = batch_idx // depth_batch_size + 1
-                total_batches = (len(seats_to_render) + depth_batch_size - 1) // depth_batch_size
-
+            if input.skip_depth_render:
+                # Try to load existing depth maps from storage
                 self._update_progress(
-                    message=f"Rendering depth maps: batch {batch_num}/{total_batches}"
+                    PipelineStage.RENDERING_DEPTHS,
+                    step=3,
+                    message="Loading existing depth maps..."
                 )
 
-                batch_depths = await workflow.execute_activity(
-                    render_depth_maps_activity,
-                    args=[blend_file_b64, batch, batch_idx],
-                    start_to_close_timeout=timedelta(minutes=20),
-                    retry_policy=BLENDER_RETRY,
-                    # No heartbeat_timeout - Modal calls are blocking
+                all_depth_maps = await workflow.execute_activity(
+                    load_existing_depth_maps_activity,
+                    args=[input.venue_id],
+                    start_to_close_timeout=timedelta(minutes=5),
+                    retry_policy=FAST_RETRY,
                 )
 
-                all_depth_maps.update(batch_depths)
-                cost = len(batch) * COST_ESTIMATES["depth_render_per_seat"]
-                cost_breakdown["depth_rendering"] = cost_breakdown.get("depth_rendering", 0) + cost
-                self._progress.actual_cost += cost
-                self._progress.depth_maps_rendered = len(all_depth_maps)
+                if all_depth_maps:
+                    workflow.logger.info(f"Loaded {len(all_depth_maps)} existing depth maps")
+                    self._progress.depth_maps_rendered = len(all_depth_maps)
+                else:
+                    workflow.logger.warning("No existing depth maps found, rendering new ones")
 
-            # Save depth maps
-            depth_paths = await workflow.execute_activity(
-                save_depth_maps_activity,
-                args=[venue_dir, all_depth_maps],
-                start_to_close_timeout=timedelta(minutes=5),
-                retry_policy=FAST_RETRY,
-            )
+            if not all_depth_maps:
+                # Render new depth maps
+                self._update_progress(
+                    PipelineStage.RENDERING_DEPTHS,
+                    step=3,
+                    message="Rendering depth maps..."
+                )
+
+                # Determine which seats to render
+                seats_to_render = anchor_seats
+                if input.custom_seats:
+                    # Use custom seats instead
+                    seats_to_render = [
+                        s for s in all_seats if s.get("id") in input.custom_seats
+                    ]
+
+                # Batch depth map rendering
+                depth_batch_size = input.depth_batch_size
+
+                for batch_idx in range(0, len(seats_to_render), depth_batch_size):
+                    if self._should_cancel:
+                        break
+
+                    batch = seats_to_render[batch_idx:batch_idx + depth_batch_size]
+                    batch_num = batch_idx // depth_batch_size + 1
+                    total_batches = (len(seats_to_render) + depth_batch_size - 1) // depth_batch_size
+
+                    self._update_progress(
+                        message=f"Rendering depth maps: batch {batch_num}/{total_batches}"
+                    )
+
+                    batch_depths = await workflow.execute_activity(
+                        render_depth_maps_activity,
+                        args=[blend_file_b64, batch, batch_idx],
+                        start_to_close_timeout=timedelta(minutes=20),
+                        retry_policy=BLENDER_RETRY,
+                        # No heartbeat_timeout - Modal calls are blocking
+                    )
+
+                    all_depth_maps.update(batch_depths)
+                    cost = len(batch) * COST_ESTIMATES["depth_render_per_seat"]
+                    cost_breakdown["depth_rendering"] = cost_breakdown.get("depth_rendering", 0) + cost
+                    self._progress.actual_cost += cost
+                    self._progress.depth_maps_rendered = len(all_depth_maps)
+
+                # Save depth maps
+                depth_paths = await workflow.execute_activity(
+                    save_depth_maps_activity,
+                    args=[venue_dir, all_depth_maps],
+                    start_to_close_timeout=timedelta(minutes=5),
+                    retry_policy=FAST_RETRY,
+                )
 
             # Check if we should stop after depth maps
             if self._should_cancel or input.stop_after_depths or input.skip_ai_generation:

@@ -131,6 +131,8 @@ export const pipelinesApi = {
     skip_ai_generation?: boolean;
     stop_after_model?: boolean;    // Stop after building 3D model (for preview)
     stop_after_depths?: boolean;   // Stop after rendering depth maps
+    skip_model_build?: boolean;    // Use existing .blend file from storage
+    skip_depth_render?: boolean;   // Use existing depth maps from storage
     surface_type?: 'rink' | 'court' | 'stage' | 'field';
   }) => api.post<{ workflow_id: string }>('/pipelines/', data),
 
@@ -140,6 +142,19 @@ export const pipelinesApi = {
   cancel: (workflowId: string) =>
     api.post(`/pipelines/${workflowId}/cancel`),
 };
+
+// Venue Assets (for resume capability)
+export interface VenueAssets {
+  venue_id: string;
+  has_model: boolean;
+  has_preview: boolean;
+  has_depth_maps: boolean;
+  has_images: boolean;
+  depth_map_count: number;
+  image_count: number;
+  model_url: string | null;
+  preview_url: string | null;
+}
 
 // Images API
 export const imagesApi = {
@@ -151,6 +166,9 @@ export const imagesApi = {
 
   getImageUrl: (venueId: string, seatId: string) =>
     `${API_URL}/images/${venueId}/${seatId}`,
+
+  getAssets: (venueId: string) =>
+    api.get<VenueAssets>(`/images/${venueId}/assets`),
 };
 
 // Event Types API

@@ -8,7 +8,7 @@ providing durability checkpoints for the workflow.
 import base64
 import json
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 from temporalio import activity
 
 
@@ -302,3 +302,87 @@ async def load_existing_images_activity(venue_dir: str) -> Dict[str, str]:
 
     activity.logger.info(f"Found {len(result)} existing images in {images_dir}")
     return result
+
+
+@activity.defn
+async def load_existing_blend_activity(venue_id: str) -> Optional[str]:
+    """
+    Load existing .blend file from Supabase Storage.
+
+    Args:
+        venue_id: Venue identifier
+
+    Returns:
+        Base64-encoded blend file, or None if not found
+    """
+    import os
+    from supabase import create_client
+
+    supabase_url = os.environ.get("SUPABASE_URL")
+    supabase_key = os.environ.get("SUPABASE_KEY")
+
+    if not supabase_url or not supabase_key:
+        activity.logger.warning("Supabase not configured, cannot load existing blend file")
+        return None
+
+    try:
+        client = create_client(supabase_url, supabase_key)
+        file_path = f"{venue_id}/venue_model.blend"
+
+        blend_bytes = client.storage.from_("IMAGES").download(file_path)
+        if blend_bytes:
+            activity.logger.info(f"Loaded existing blend file: {len(blend_bytes)} bytes")
+            return base64.b64encode(blend_bytes).decode('utf-8')
+    except Exception as e:
+        activity.logger.warning(f"Failed to load blend file from Supabase: {e}")
+
+    return None
+
+
+@activity.defn
+async def load_existing_depth_maps_activity(venue_id: str) -> Dict[str, str]:
+    """
+    Load existing depth maps from Supabase Storage.
+
+    Args:
+        venue_id: Venue identifier
+
+    Returns:
+        Dictionary mapping seat_id to base64-encoded PNG
+    """
+    import os
+    from supabase import create_client
+
+    supabase_url = os.environ.get("SUPABASE_URL")
+    supabase_key = os.environ.get("SUPABASE_KEY")
+
+    if not supabase_url or not supabase_key:
+        activity.logger.warning("Supabase not configured, cannot load existing depth maps")
+        return {}
+
+    try:
+        client = create_client(supabase_url, supabase_key)
+        bucket = client.storage.from_("IMAGES")
+
+        # List depth maps
+        depth_files = bucket.list(f"{venue_id}/depth_maps")
+        result = {}
+
+        for f in depth_files:
+            if f.get("id") and f.get("name", "").endswith(".png"):
+                file_path = f"{venue_id}/depth_maps/{f['name']}"
+                try:
+                    depth_bytes = bucket.download(file_path)
+                    if depth_bytes:
+                        # Extract seat_id from filename (e.g., "103_Back_1_depth.png" -> "103_Back_1")
+                        seat_id = f["name"].replace("_depth.png", "")
+                        result[seat_id] = base64.b64encode(depth_bytes).decode('utf-8')
+                except Exception as e:
+                    activity.logger.warning(f"Failed to download {file_path}: {e}")
+
+        activity.logger.info(f"Loaded {len(result)} existing depth maps from Supabase")
+        return result
+
+    except Exception as e:
+        activity.logger.warning(f"Failed to list depth maps: {e}")
+        return {}

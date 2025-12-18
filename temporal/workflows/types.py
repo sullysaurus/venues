@@ -45,6 +45,10 @@ class VenuePipelineInput:
     stop_after_depths: bool = False     # Stop after rendering depth maps
     skip_ai_generation: bool = False    # Legacy alias for stop_after_depths
 
+    # Resume options - skip steps if assets already exist
+    skip_model_build: bool = False      # Use existing .blend file from storage
+    skip_depth_render: bool = False     # Use existing depth maps from storage
+
     # Storage path
     venue_dir: Optional[str] = None
 
